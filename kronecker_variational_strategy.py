@@ -96,6 +96,7 @@ class KroneckerVariationalStrategy(Module, ABC):
         Compute the KL divergence between the variational inducing distribution :math:`q(\mathbf u)`
         and the prior inducing distribution :math:`p(\mathbf u)`.
         """
+        # NOTE: due to whitening, prior is N(0,I) not N(0, K_ZZ).
         with settings.max_preconditioner_size(0):
             kl_divergence = torch.distributions.kl.kl_divergence(self.variational_distribution, self.prior_distribution)
         return kl_divergence
