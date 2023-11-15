@@ -31,10 +31,12 @@ n_train_iterations = config['n_train_iterations']
 train_batch_size_X = config['train_batch_size_X']
 train_batch_size_C = config['train_batch_size_C']
 gradient_clip_approach = config['gradient_clip_approach']
+num_X_MC = config['num_X_MC']
 
 # Other parameters...
 mnist_training_data = Tensor(mnist.train_images()[:num_train_data])
 mnist_training_data, param_dict = mnist_preprocess(mnist_training_data, method=preprocessing_method)
+print('Preprocessing method:', preprocessing_method)
 print('Preprocessing params stored in dict:', param_dict)
 n_X = mnist_training_data.shape[0]
 n_C = int(mnist_training_data.shape[-2] * mnist_training_data.shape[-1]) # also data_dim
@@ -74,15 +76,20 @@ for i in iterator:
     # batch_index_X, batch_index_C = proper_sample_index_X_and_C(my_model, train_batch_size_X, train_batch_size_C, forbidden_pairs)
     # core code is here 
     optimizer.zero_grad()
-    sample_X = my_model.sample_latent_variable()  # a full sample returns latent x across all n_X TODO: more efficient?
-    sample_batch_X = sample_X[batch_index_X]
-    sample_batch_C = C[batch_index_C]
-    output_batch = my_model(sample_batch_X, sample_batch_C) # q(f)
-    batch_index_Y = inhomogeneous_index_of_batch_Y(batch_index_X, batch_index_C, n_X, n_C)
-    loss = -mll(output_batch, Y_train[batch_index_Y]).sum()
-    loss_list.append(loss.item())
-    iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
-    loss.backward()
+    total_loss = 0
+    for _ in range(num_X_MC):
+        sample_X = my_model.sample_latent_variable()  # a full sample returns latent x across all n_X TODO: more efficient?
+        sample_batch_X = sample_X[batch_index_X]
+        sample_batch_C = C[batch_index_C]
+        output_batch = my_model(sample_batch_X, sample_batch_C) # q(f)
+        batch_index_Y = inhomogeneous_index_of_batch_Y(batch_index_X, batch_index_C, n_X, n_C)
+        loss = -mll(output_batch, Y_train[batch_index_Y]).sum()
+        total_loss += loss
+    
+    average_loss = total_loss / num_X_MC
+    loss_list.append(average_loss.item())
+    iterator.set_description('Loss: ' + str(float(np.round(average_loss.item(),2))) + ", iter no: " + str(i))
+    average_loss.backward()
 
     # Gradient Clipping. Try Many Different Approaches.
     gradient_clip(my_model, approach=gradient_clip_approach, clip_value=10)
