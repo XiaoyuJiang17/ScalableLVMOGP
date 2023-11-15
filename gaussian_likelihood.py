@@ -42,19 +42,21 @@ class _GaussianLikelihoodBase(Likelihood):
         way = 'way2'
 
         if way == 'way1':
-            # NOTE This is the original implementation in pytorch, but I find misunderstanding ...(even wrong)
             noise = self._shaped_noise_covar(input.mean.shape, *params, **kwargs).diagonal(dim1=-1, dim2=-2)
             # Potentially reshape the noise to deal with the multitask case
             noise = noise.view(*noise.shape[:-1], *input.event_shape)
-
-            mean, variance = input.mean, input.variance
-            res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
+            
+            mean, variance = input.mean, input.variance.clamp_min(1e-8)
+            full_variance = variance + noise 
+            # the original implementation is: (# NOTE I find misunderstanding ...(even wrong))
+            # res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
+            res = ((target - mean) / full_variance.sqrt()).square() + full_variance.log() + math.log(2 * math.pi)
             res = res.mul(-0.5)
 
         elif way == 'way2':
             # NOTE: This is my newly added implementation.
             res = self.log_marginal(target, input, *params, **kwargs)
-        
+
         return res
 
     def forward(self, function_samples: Tensor, *params: Any, **kwargs: Any) -> Normal:
