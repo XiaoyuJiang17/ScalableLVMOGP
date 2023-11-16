@@ -1,4 +1,4 @@
-expri_name: 'lvmogp_mnist'
+expri_name: 'lvmogp_healing_mnist'
 root_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results'
 preprocessing_method: 
 num_train_data: 200
