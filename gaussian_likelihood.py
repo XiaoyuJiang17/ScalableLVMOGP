@@ -54,7 +54,7 @@ class _GaussianLikelihoodBase(Likelihood):
             res = res.mul(-0.5)
 
         elif way == 'way2':
-            # NOTE: This is my newly added implementation.
+            # NOTE: This is my newly added implementation. way1 and way2 are tested to have same output (with tolerence for numerical differences)
             res = self.log_marginal(target, input, *params, **kwargs)
 
         return res

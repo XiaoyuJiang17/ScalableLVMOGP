@@ -71,6 +71,7 @@ loss_list = []
 iterator = trange(n_train_iterations, leave=True)
 
 my_model.train()
+likelihood.train()
 for i in iterator: 
     batch_index_X, batch_index_C = proper_sample_index_X_and_C_(my_model, train_batch_size_X, train_batch_size_C, forbidden_pairs_file_path)
     # batch_index_X, batch_index_C = proper_sample_index_X_and_C(my_model, train_batch_size_X, train_batch_size_C, forbidden_pairs)
