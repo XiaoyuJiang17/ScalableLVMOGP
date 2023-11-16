@@ -1,10 +1,11 @@
 expri_name: 'lvmogp_healing_mnist'
+data_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/healing_mnist_data/len=50_squ=0_noise=0_digit=all'
 root_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results'
+mnist_figure_index: 6 # choose between 0 to # training data in mnist
 preprocessing_method: 
-num_train_data: 200
 latent_dim: 3
 n_inducing_C: 50
-n_inducing_X: 50
+n_inducing_X: 5
 pca: false
 num_forbidden: 100
 learning_rate: 0.3
@@ -12,7 +13,7 @@ schduler_step_size: 10
 schduler_gamma: 0.6
 model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/models'
 likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/models'
-n_train_iterations: 10 # 10000
+n_train_iterations: 100 # 10000
 train_batch_size_X: 8
 train_batch_size_C: 500 # NOTE: train_batch_size_C + num_forbidden MUST < 784
 gradient_clip_approach: 'Global Norm Clipping'

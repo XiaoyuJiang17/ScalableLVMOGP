@@ -10,13 +10,14 @@ from torch.optim.lr_scheduler import StepLR
 from util_functions import *
 
 # Load hyperparameters from .yaml file
-with open('config_mnist_expri.yaml', 'r') as file:
+with open('config_healing_mnist_expri.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 # Assign hyperparameters from yaml file
+data_path = config['data_path']
+mnist_figure_index = config['mnist_figure_index']
 root_path = config['root_path']
 preprocessing_method = config['preprocessing_method']
-num_train_data = config['num_train_data']
 latent_dim = config['latent_dim']
 n_inducing_C = config['n_inducing_C']
 n_inducing_X = config['n_inducing_X']
@@ -34,15 +35,17 @@ gradient_clip_approach = config['gradient_clip_approach']
 num_X_MC = config['num_X_MC']
 
 # Other parameters...
-mnist_training_data = Tensor(mnist.train_images()[:num_train_data])
-mnist_training_data, param_dict = mnist_preprocess(mnist_training_data, method=preprocessing_method)
+healing_mnist_training_data = np.load(f'{data_path}/train.npy')[mnist_figure_index]
+healing_mnist_training_data = Tensor(healing_mnist_training_data)
+
+healing_mnist_training_data, param_dict = mnist_preprocess(healing_mnist_training_data, method=preprocessing_method)
 print('Preprocessing method:', preprocessing_method)
 print('Preprocessing params stored in dict:', param_dict)
-n_X = mnist_training_data.shape[0]
-n_C = int(mnist_training_data.shape[-2] * mnist_training_data.shape[-1]) # also data_dim
+n_X = healing_mnist_training_data.shape[0]
+n_C = int(healing_mnist_training_data.shape[-2] * healing_mnist_training_data.shape[-1]) # also data_dim
 n_total = n_X * n_C
-index_dim, C = gene_2dimage_inputs(mnist_training_data.shape[-2])
-Y_train = mnist_training_data.reshape(-1)
+index_dim, C = gene_2dimage_inputs(healing_mnist_training_data.shape[-2])
+Y_train = healing_mnist_training_data.reshape(-1)
 forbidden_pairs = proper_gene_forbidden_pairs(n_X=n_X, n_C=n_C, num_forbidden=num_forbidden)
 forbidden_pairs_file_path = f'{root_path}/forbidden_pairs.csv'
 with open(forbidden_pairs_file_path, mode='w') as file:
