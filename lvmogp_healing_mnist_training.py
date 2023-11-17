@@ -8,6 +8,7 @@ from variational_elbo import VariationalELBO
 from tqdm import trange
 from torch.optim.lr_scheduler import StepLR
 from util_functions import *
+from gpytorch.likelihoods import BernoulliLikelihood
 
 # Load hyperparameters from .yaml file
 with open('config_healing_mnist_expri.yaml', 'r') as file:
@@ -35,7 +36,7 @@ gradient_clip_approach = config['gradient_clip_approach']
 num_X_MC = config['num_X_MC']
 
 # Other parameters...
-healing_mnist_training_data = np.load(f'{data_path}/train.npy')[mnist_figure_index]
+healing_mnist_training_data = np.load(f'{data_path}/train.npy')[mnist_figure_index] * 1.0 # make them float numbers ...
 healing_mnist_training_data = Tensor(healing_mnist_training_data)
 
 healing_mnist_training_data, param_dict = mnist_preprocess(healing_mnist_training_data, method=preprocessing_method)
@@ -54,7 +55,8 @@ with open(forbidden_pairs_file_path, mode='w') as file:
 
 # Specify model, likelihood and training objective.
 my_model = LVMOGP_SVI(n_X, n_C, index_dim, latent_dim, n_inducing_C, n_inducing_X, Y_train.reshape(n_X, -1), pca=pca)
-likelihood = GaussianLikelihood() # how many outputs
+likelihood = BernoulliLikelihood() # we can choose how to treat this problem: classification or regression ...
+# likelihood = GaussianLikelihood() # how many outputs
 mll = VariationalELBO(likelihood, my_model, num_data=n_total)
 
 # Optimizer and Scheduler

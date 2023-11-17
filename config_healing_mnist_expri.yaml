@@ -1,14 +1,14 @@
-expri_name: 'lvmogp_healing_mnist'
+expri_name: 'lvmogp_healing_mnist_bernouli_likelihood'
 data_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/healing_mnist_data/len=50_squ=0_noise=0_digit=all'
 root_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results'
 mnist_figure_index: 6 # choose between 0 to # training data in mnist
-preprocessing_method: 
-latent_dim: 3
+preprocessing_method: # for bernouli likelihood, this must be None ....
+latent_dim: 2
 n_inducing_C: 50
-n_inducing_X: 5
+n_inducing_X: 10
 pca: false
 num_forbidden: 100
-learning_rate: 0.3
+learning_rate: 0.5
 schduler_step_size: 10
 schduler_gamma: 0.6
 model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/models'
