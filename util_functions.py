@@ -354,7 +354,7 @@ def tidily_sample_index_X_and_C(my_model, batch_size_X, batch_size_C, forbidden_
 #                               
 
 # Below is some code about generating syhthetic datasets.
-def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None):
+def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None):
 
     '''
     Generate sythetic data without missing data. 
@@ -376,7 +376,11 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
         sample: (sampled) function values at corresponding X and C.
     '''
     index_dim = 1
-    
+
+    if kernel_parameters == None:
+        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(-0.5), 'X_raw_lengthscale': torch.tensor([[0.1 for _ in range(latent_dim)]]),
+                                     'C_raw_outputscale': torch.tensor(0.5), 'C_raw_lengthscale': torch.tensor([[0.1 for _ in range(index_dim)]])}
+
     if C_ == None:
         C = Tensor(np.linspace(-10, 10, n_C)) # inputs in our cases, 1 point every distance 0.5 
     else:
@@ -390,10 +394,10 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     covar_module_X = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
     covar_module_C = ScaleKernel(RBFKernel(ard_num_dims=index_dim))
 
-    covar_module_X.raw_outputscale.data = torch.tensor(0.49).to(covar_module_X.device)
-    covar_module_X.base_kernel.raw_lengthscale.data = torch.tensor([[0.5 for _ in range(latent_dim)]]).to(covar_module_X.device)
-    covar_module_C.raw_outputscale.data = torch.tensor(0.51).to(covar_module_C.device)
-    covar_module_C.base_kernel.raw_lengthscale.data = torch.tensor([[0.5 for _ in range(index_dim)]]).to(covar_module_C.device)
+    covar_module_X.raw_outputscale.data = default_kernel_parameters['X_raw_outputscale'].to(covar_module_X.device)
+    covar_module_X.base_kernel.raw_lengthscale.data = default_kernel_parameters['X_raw_lengthscale'].to(covar_module_X.device) 
+    covar_module_C.raw_outputscale.data = default_kernel_parameters['C_raw_outputscale'].to(covar_module_C.device)
+    covar_module_C.base_kernel.raw_lengthscale.data = default_kernel_parameters['C_raw_lengthscale'].to(covar_module_C.device)
 
     covar_X = covar_module_X(X)
     covar_C = covar_module_C(C)
@@ -404,7 +408,7 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     dist = MultivariateNormal(mean_final, covar_final)
     sample = dist.sample()
 
-    return X, C, sample
+    return X, C, sample, default_kernel_parameters
 
 # TODO: non-tidily generating data from MOGP.
 
