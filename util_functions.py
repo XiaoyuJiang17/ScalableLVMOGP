@@ -378,8 +378,8 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     index_dim = 1
 
     if kernel_parameters == None:
-        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(-0.5), 'X_raw_lengthscale': torch.tensor([[0.1 for _ in range(latent_dim)]]),
-                                     'C_raw_outputscale': torch.tensor(0.5), 'C_raw_lengthscale': torch.tensor([[0.1 for _ in range(index_dim)]])}
+        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(0.0), 'X_raw_lengthscale': torch.tensor([[0.1 for _ in range(latent_dim)]]),
+                                     'C_raw_outputscale': torch.tensor(0.9), 'C_raw_lengthscale': torch.tensor([[0.1 for _ in range(index_dim)]])}
 
     if C_ == None:
         C = Tensor(np.linspace(-10, 10, n_C)) # inputs in our cases, 1 point every distance 0.5 
