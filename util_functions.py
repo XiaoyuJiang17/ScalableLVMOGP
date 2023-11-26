@@ -354,7 +354,7 @@ def tidily_sample_index_X_and_C(my_model, batch_size_X, batch_size_C, forbidden_
 #                               
 
 # Below is some code about generating syhthetic datasets.
-def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None):
+def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None, random_seed=0):
 
     '''
     Generate sythetic data without missing data. 
@@ -375,6 +375,10 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
         C: generated input locations.
         sample: (sampled) function values at corresponding X and C.
     '''
+    # Set random seeds for reproducibility
+    np.random.seed(random_seed)  # Set seed for NumPy
+    torch.manual_seed(random_seed)  # Set seed for PyTorch
+
     index_dim = 1
 
     if kernel_parameters == None:
