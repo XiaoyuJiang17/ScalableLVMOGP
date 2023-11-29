@@ -555,3 +555,66 @@ def revserse_mnist_preprocess(processed_mnist_data, method, param_dict=None):
         mnist_data = processed_mnist_data * 255
         
     return mnist_data
+
+def sample_from_multivariantgaussian(mean_tensor:Tensor, log_sigma_tensor:Tensor, monte_carlo_samples:int=10):
+    '''
+    Sample samples from several mean-field multivariable gaussian distribution (specified by mean and log-sigma).
+
+    return:
+        samples: (monte_carlo_samples, n_variables, n_dim) tensor. 
+    '''
+    assert len(mean_tensor.shape) == len(log_sigma_tensor.shape) == 2
+    assert mean_tensor.shape == log_sigma_tensor.shape
+    n_variables = mean_tensor.shape[0]
+    n_dim = mean_tensor.shape[1]
+    sigma_tensor = torch.exp(log_sigma_tensor)
+
+    # storing samples ... 
+    samples = torch.zeros(n_variables, monte_carlo_samples, n_dim)
+
+    for i in range(n_variables):
+        mu = mean_tensor[i]
+        cov = torch.diag(sigma_tensor[i]**2)
+        dist = MultivariateNormal(mu, cov)
+        samples[i] = dist.sample((monte_carlo_samples,))
+
+    samples = samples.transpose(0, 1)
+    return samples
+
+from gaussian_likelihood import GaussianLikelihood
+def mc_pred_helper(model, likelihood: GaussianLikelihood, sample_X_tensor:Tensor, C_total, batch_index_X, batch_index_C):
+    '''
+    Helper function to get q(y_*) (prediction on evaluation set) when monte carlo integration of latent variable X is applied.
+    Args:
+        model: LVMOGP_SVI.
+        likelihood: GaussianLikelihood.
+        sample_X_tensor: the tensor return by function 'sample_from_multivariantgaussian'.
+        C_total: 
+        batch_index_X: pick indices of X (which outputs are considered?)
+        batch_index_C: pick indices of C (which inputs are considered?)
+    Return:
+        list_grid_output_batches, contains several gaussian distributions.
+    '''
+    list_grid_output_batches = []
+    
+    for i in range(sample_X_tensor.shape[0]):
+        sample_X = sample_X_tensor[i]
+        sample_batch_X = sample_X[batch_index_X]
+        sample_batch_C = C_total[batch_index_C]
+
+        grid_output_batch = model(sample_batch_X, sample_batch_C) # q(f)
+        # passing through likelihood.
+        grid_output_batch = likelihood(grid_output_batch) # q(y) Gaussian Distributed
+        list_grid_output_batches.append(grid_output_batch)
+    
+    # sum of gaussian is still gaussian ...
+    ave_mu, ave_cov = torch.zeros_like(grid_output_batch), torch.zeros_like(grid_output_batch)
+    for output in list_grid_output_batches:
+        ave_mu += output.loc
+        ave_cov += output.stddev ** 2
+    ave_mu  /= sample_X_tensor.shape[0]
+    ave_cov /= (sample_X_tensor.shape[0] ** 2)
+    average_grid_output_batches = MultivariateNormal(ave_mu, ave_cov)
+    
+    return list_grid_output_batches, average_grid_output_batches
+
