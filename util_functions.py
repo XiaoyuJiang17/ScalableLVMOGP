@@ -581,7 +581,8 @@ def sample_from_multivariantgaussian(mean_tensor:Tensor, log_sigma_tensor:Tensor
     samples = samples.transpose(0, 1)
     return samples
 
-from gaussian_likelihood import GaussianLikelihood
+"""
+from models_.gaussian_likelihood import GaussianLikelihood
 def mc_pred_helper(model, likelihood: GaussianLikelihood, sample_X_tensor:Tensor, C_total, batch_index_X, batch_index_C):
     '''
     Helper function to get q(y_*) (prediction on evaluation set) when monte carlo integration of latent variable X is applied.
@@ -605,16 +606,17 @@ def mc_pred_helper(model, likelihood: GaussianLikelihood, sample_X_tensor:Tensor
         grid_output_batch = model(sample_batch_X, sample_batch_C) # q(f)
         # passing through likelihood.
         grid_output_batch = likelihood(grid_output_batch) # q(y) Gaussian Distributed
-        list_grid_output_batches.append(grid_output_batch)
+        list_grid_output_batches.append(grid_output_batch) 
     
-    # sum of gaussian is still gaussian ...
-    ave_mu, ave_cov = torch.zeros_like(grid_output_batch), torch.zeros_like(grid_output_batch)
+    # TODO: this is wrong ... the average distribution is no longer gaussian .... 
+    ave_mu, ave_cov = torch.zeros_like(grid_output_batch.loc), torch.zeros_like(grid_output_batch.loc)
     for output in list_grid_output_batches:
         ave_mu += output.loc
         ave_cov += output.stddev ** 2
     ave_mu  /= sample_X_tensor.shape[0]
     ave_cov /= (sample_X_tensor.shape[0] ** 2)
-    average_grid_output_batches = MultivariateNormal(ave_mu, ave_cov)
-    
-    return list_grid_output_batches, average_grid_output_batches
 
+    average_grid_output_batches = MultivariateNormal(ave_mu, torch.diag(ave_cov))
+
+    return list_grid_output_batches, average_grid_output_batches
+"""

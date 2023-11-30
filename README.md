@@ -12,3 +12,7 @@ util_functions.py add random_seed implementation to ensure reproductivity.
 
 Two files are renamed: ind_gp_synth_data_expri_w.o._runall.ipynb and ind_gp_synth_data_expri_w.o.ipynb
 Two files are created: ind_gp_synth_data_expri_w_runall.ipynb and ind_gp_synth_data_expri_w.ipynb
+
+30/11/2023
+
+re-organize files.
