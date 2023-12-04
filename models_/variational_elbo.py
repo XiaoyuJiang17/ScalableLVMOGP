@@ -149,3 +149,61 @@ class VariationalELBO(_ApproximateMarginalLogLikelihood):
         :return: Variational ELBO. Output shape corresponds to batch shape of the model/input data.
         """
         return super().forward(variational_dist_f, target, **kwargs)
+
+class ClfVariationalELBO(MarginalLogLikelihood, ABC):
+    '''
+    This class is largely the same as _ApproximateMarginalLogLikelihood and VariationalELBO.
+    The reason to have this class is to better suit multi-output multi-class classfication with LVMOGP-SVI model.
+    '''
+    def __init__(self, likelihood, model, num_data, beta=1.0, combine_terms=True):
+        super().__init__(likelihood, model)
+        self.combine_terms = combine_terms
+        self.num_data = num_data
+        self.beta = beta
+    
+    def _log_likelihood_term(self, variational_dist_f, **kwargs):
+        '''
+        different from VariationalELBO, no 'target' is needed for multi-output multi-class classfication with LVMOGP-SVI model,
+        no .sum(-1) at the end as well.
+        NOTE self.likelihood.expected_log_prob here MUST be Multi_Output_Multi_Class_AR.
+        '''
+        return self.likelihood.expected_log_prob(variational_dist_f, **kwargs)
+    
+    def forward(self, approximate_dist_f, **kwargs):
+        r"""
+        Computes the Variational ELBO given :math:`q(\mathbf f)` and `\mathbf y`.
+        Calling this function will call the likelihood's `expected_log_prob` function.
+
+        Args:
+            approximate_dist_f (:obj:`gpytorch.distributions.MultivariateNormal`):
+                :math:`q(\mathbf f)` the outputs of the latent function (the :obj:`gpytorch.models.ApproximateGP`)
+
+        Keyword Args:
+            Additional arguments passed to the likelihood's `expected_log_prob` function.
+        """
+        # Get likelihood term and KL term
+        num_batch = approximate_dist_f.event_shape[0]
+        log_likelihood = self._log_likelihood_term(approximate_dist_f, **kwargs).div(num_batch)
+        kl_divergence = self.model.variational_strategy.kl_divergence().div(self.num_data / self.beta)
+
+        # Add any additional registered loss terms
+        added_loss = torch.zeros_like(log_likelihood)
+        had_added_losses = False
+        for added_loss_term in self.model.added_loss_terms():
+            added_loss.add_(added_loss_term.loss())
+            had_added_losses = True
+
+        # Log prior term
+        log_prior = torch.zeros_like(log_likelihood)
+        for name, module, prior, closure, _ in self.named_priors():
+            log_prior.add_(prior.log_prob(closure(module)).sum().div(self.num_data))
+
+        if self.combine_terms:
+            return log_likelihood - kl_divergence + log_prior - added_loss
+        else:
+            if had_added_losses:
+                return log_likelihood, kl_divergence, log_prior, added_loss
+            else:
+                return log_likelihood, kl_divergence, log_prior
+
+
