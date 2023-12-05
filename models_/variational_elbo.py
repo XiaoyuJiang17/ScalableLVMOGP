@@ -161,15 +161,15 @@ class ClfVariationalELBO(MarginalLogLikelihood, ABC):
         self.num_data = num_data
         self.beta = beta
     
-    def _log_likelihood_term(self, variational_dist_f, **kwargs):
+    def _log_likelihood_term(self, variational_dist_f, ref, **kwargs):
         '''
         different from VariationalELBO, no 'target' is needed for multi-output multi-class classfication with LVMOGP-SVI model,
         no .sum(-1) at the end as well.
         NOTE self.likelihood.expected_log_prob here MUST be Multi_Output_Multi_Class_AR.
         '''
-        return self.likelihood.expected_log_prob(variational_dist_f, **kwargs)
+        return self.likelihood.expected_log_prob(variational_dist_f, ref, **kwargs)
     
-    def forward(self, approximate_dist_f, **kwargs):
+    def forward(self, approximate_dist_f, ref, **kwargs):
         r"""
         Computes the Variational ELBO given :math:`q(\mathbf f)` and `\mathbf y`.
         Calling this function will call the likelihood's `expected_log_prob` function.
@@ -177,13 +177,14 @@ class ClfVariationalELBO(MarginalLogLikelihood, ABC):
         Args:
             approximate_dist_f (:obj:`gpytorch.distributions.MultivariateNormal`):
                 :math:`q(\mathbf f)` the outputs of the latent function (the :obj:`gpytorch.models.ApproximateGP`)
+            ref (Tensor):
 
         Keyword Args:
             Additional arguments passed to the likelihood's `expected_log_prob` function.
         """
         # Get likelihood term and KL term
         num_batch = approximate_dist_f.event_shape[0]
-        log_likelihood = self._log_likelihood_term(approximate_dist_f, **kwargs).div(num_batch)
+        log_likelihood = self._log_likelihood_term(approximate_dist_f, ref, **kwargs).div(num_batch)
         kl_divergence = self.model.variational_strategy.kl_divergence().div(self.num_data / self.beta)
 
         # Add any additional registered loss terms

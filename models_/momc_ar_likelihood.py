@@ -21,12 +21,14 @@ class Multi_Output_Multi_Class_AR_Likelihood():
 
         batch_sum_gamma = gamma.sum(dim=1)
         psy = psy.reshape(batch_sum_gamma.shape) # (num_outputs, num_input_samples)
+        assert psy.shape[0] == ref.shape[0]
+        assert psy.shape[-1] == ref.shape[-1]
+        P = batch_sum_gamma * psy
+        intermediate_term = ( P.transpose(-1,-2) * self.multiplier / (ref.shape[1]-1) ).transpose(-1,-2) + 1
+        # print('have a look at minimum term inside log', intermediate_term.min())
+        intermediate_term = torch.log(intermediate_term.data)
 
-        psy_batch_sum_gamma_prod = batch_sum_gamma * psy
-        intermediate_term = ( (ref.shape[1]-1) * psy_batch_sum_gamma_prod.transpose(-1,-2) / self.multiplier).transpose(-1,-2) + 1
-        intermediate_term = torch.log(intermediate_term)
-
-        result = intermediate_term.sum()
+        result = - intermediate_term.sum()
 
         return result
 
