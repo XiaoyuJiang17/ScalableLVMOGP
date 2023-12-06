@@ -26,7 +26,7 @@ class Multi_Output_Multi_Class_AR_Likelihood():
         P = batch_sum_gamma * psy
         intermediate_term = ( P.transpose(-1,-2) * self.multiplier / (ref.shape[1]-1) ).transpose(-1,-2) + 1
         # print('have a look at minimum term inside log', intermediate_term.min())
-        intermediate_term = torch.log(intermediate_term.data)
+        intermediate_term = torch.log(intermediate_term)
 
         result = - intermediate_term.sum()
 

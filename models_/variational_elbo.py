@@ -155,11 +155,12 @@ class ClfVariationalELBO(MarginalLogLikelihood, ABC):
     This class is largely the same as _ApproximateMarginalLogLikelihood and VariationalELBO.
     The reason to have this class is to better suit multi-output multi-class classfication with LVMOGP-SVI model.
     '''
-    def __init__(self, likelihood, model, num_data, beta=1.0, combine_terms=True):
+    def __init__(self, likelihood, model, num_data, beta=1.0, alpha=0.1, combine_terms=True):
         super().__init__(likelihood, model)
         self.combine_terms = combine_terms
         self.num_data = num_data
         self.beta = beta
+        self.alpha = alpha
     
     def _log_likelihood_term(self, variational_dist_f, ref, **kwargs):
         '''
@@ -191,7 +192,8 @@ class ClfVariationalELBO(MarginalLogLikelihood, ABC):
         added_loss = torch.zeros_like(log_likelihood)
         had_added_losses = False
         for added_loss_term in self.model.added_loss_terms():
-            added_loss.add_(added_loss_term.loss())
+            # ONLY one added loss here, which is KL in latent space
+            added_loss.add_(self.alpha * added_loss_term.loss())
             had_added_losses = True
 
         # Log prior term
