@@ -386,6 +386,8 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     if kernel_parameters == None:
         default_kernel_parameters = {'X_raw_outputscale': torch.tensor(0.0), 'X_raw_lengthscale': torch.tensor([[0.1 for _ in range(latent_dim)]]),
                                      'C_raw_outputscale': torch.tensor(0.9), 'C_raw_lengthscale': torch.tensor([[0.1 for _ in range(index_dim)]])}
+    else:
+        default_kernel_parameters = kernel_parameters
 
     if C_ == None:
         C = Tensor(np.linspace(-10, 10, n_C)) # inputs in our cases, 1 point every distance 0.5 
@@ -413,7 +415,7 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
 
     dist = MultivariateNormal(mean_final, covar_final)
     sample = dist.sample()
-
+    print('Dataset Generated!')
     return X, C, sample, default_kernel_parameters
 
 # TODO: non-tidily generating data from MOGP.
@@ -629,6 +631,9 @@ def helper_model_diagonsis(my_model, mode='all'):
     for name, param in my_model.named_parameters():
         print(name, param.size())
         print(param)
+
+
+
 
 ################################################   Classification Utility Functions  ################################################
 
