@@ -1,4 +1,7 @@
+import os
 import numpy as np
+import pandas as pd
+import json
 import torch
 import matplotlib.pyplot as plt
 from gpytorch.kernels import ScaleKernel, RBFKernel
@@ -165,7 +168,7 @@ def plot_loss_and_savefig(loss_list:list, rootpath_to_save='/Users/jiangxiaoyu/D
     save_path = 'training_loss_curve.png'
     plt.savefig(f'{rootpath_to_save}/{save_path}')
 
-def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15):
+def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15, picture_save_path:str=''):
     '''
     This is a 1 dim plot: train (corss) and test (dot) data, fitted gp all in the same figure.
     The shadowed area is mean +/- 1.96 gp_pred_std.
@@ -197,7 +200,7 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     plt.scatter(test_X_np, test_Y_np, c='b', marker='o', label='Test Data', alpha=0.2)
 
     # Plot inducing points on x axis
-    plt.scatter(inducing_points_X, [plt.gca().get_ylim()[0]] * n_inducing_C, color='black', marker='^', label='Inducing Locations')
+    plt.scatter(inducing_points_X, [plt.gca().get_ylim()[0] - 1] * n_inducing_C, color='black', marker='^', label='Inducing Locations')
 
 
     # Plot GP predictions as a line
@@ -207,7 +210,7 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     plt.legend()
     plt.title("Train/Test Data and Fitted GP")
     plt.tight_layout()
-
+    plt.savefig(picture_save_path)
     plt.show()
 
     return None
@@ -384,8 +387,8 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     index_dim = 1
 
     if kernel_parameters == None:
-        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(0.0), 'X_raw_lengthscale': torch.tensor([[0.1 for _ in range(latent_dim)]]),
-                                     'C_raw_outputscale': torch.tensor(0.9), 'C_raw_lengthscale': torch.tensor([[0.1 for _ in range(index_dim)]])}
+        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(0.0), 'X_raw_lengthscale': torch.tensor([0.1 for _ in range(latent_dim)]),
+                                     'C_raw_outputscale': torch.tensor(0.9), 'C_raw_lengthscale': torch.tensor([0.1 for _ in range(index_dim)])}
     else:
         default_kernel_parameters = kernel_parameters
 
@@ -408,9 +411,12 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     covar_module_C.base_kernel.raw_lengthscale.data = default_kernel_parameters['C_raw_lengthscale'].to(covar_module_C.device)
 
     covar_X = covar_module_X(X)
+    print('covar_X has shape', covar_X.shape)
     covar_C = covar_module_C(C)
+    print('covar_C has shape', covar_C.shape)
     # K + sigma^2 * I 
     covar_final = KroneckerProductLinearOperator(covar_X, covar_C).add_jitter(noise_scale).to_dense().detach()
+    print('covar_final has shape', covar_final.shape)
     mean_final = Tensor([0. for _ in range(n_C * n_X)])
 
     dist = MultivariateNormal(mean_final, covar_final)
@@ -632,6 +638,41 @@ def helper_model_diagonsis(my_model, mode='all'):
         print(name, param.size())
         print(param)
 
+def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
+    '''
+    Evaluate negative log likelihood on given i.i.d. targets, where likelihood function is 
+    gaussian with mean GaussianMean variance GaussianVar.
+
+    Return:
+        nll: scalar
+    '''
+    assert Target.shape == GaussianMean.shape == GaussianVar.shape
+    nll = 0.5 * torch.mean(torch.log(2 * torch.pi * GaussianVar) + (Target - GaussianMean)**2 / GaussianVar)
+    return nll
+
+
+def store_data_from_synth_reg(store_path:str, latents:Tensor, inputs:Tensor, target_data:Tensor, kernel_parameters:dict):
+    '''
+    create a sub-folder under given store_path to contain all files.
+    '''
+    n_inputs = inputs.shape[0]
+    n_latents = latents.shape[0]
+    assert int(n_inputs * n_latents) == target_data.shape[0]
+    # create sub-folder
+    new_folder_path = f'{store_path}/ninputs_{n_inputs}_nlatents_{n_latents}'
+    os.makedirs(new_folder_path, exist_ok=True)
+    # pump in tensors
+    pd.DataFrame(latents.numpy()).to_csv(f'{new_folder_path}/latents.csv', index=False)
+    pd.DataFrame(inputs.numpy()).to_csv(f'{new_folder_path}/inputs.csv', index=False)
+    pd.DataFrame(target_data.numpy()).to_csv(f'{new_folder_path}/target_data.csv', index=False)
+
+    # due to kernel_parameters contains tensors which are not ok to work with
+    # we need to transform tensors to lists ....
+    new_kernel_params = {}
+    for key, value in kernel_parameters.items():
+        new_kernel_params[key] = value.tolist()
+    with open(f'{new_folder_path}/dictionary.json', 'w') as json_file:
+        json.dump(new_kernel_params, json_file)
 
 
 

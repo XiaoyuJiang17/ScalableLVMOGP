@@ -155,7 +155,7 @@ class ClfVariationalELBO(MarginalLogLikelihood, ABC):
     This class is largely the same as _ApproximateMarginalLogLikelihood and VariationalELBO.
     The reason to have this class is to better suit multi-output multi-class classfication with LVMOGP-SVI model.
     '''
-    def __init__(self, likelihood, model, num_data, beta=1.0, alpha=0.1, combine_terms=True):
+    def __init__(self, likelihood, model, num_data, beta=1.0, alpha=1.0, combine_terms=True):
         super().__init__(likelihood, model)
         self.combine_terms = combine_terms
         self.num_data = num_data
