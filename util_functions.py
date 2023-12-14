@@ -404,7 +404,7 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
 
     covar_module_X = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
     covar_module_C = ScaleKernel(RBFKernel(ard_num_dims=index_dim))
-
+    # TODO: Try another implementation ... 
     covar_module_X.raw_outputscale.data = default_kernel_parameters['X_raw_outputscale'].to(covar_module_X.device)
     covar_module_X.base_kernel.raw_lengthscale.data = default_kernel_parameters['X_raw_lengthscale'].to(covar_module_X.device) 
     covar_module_C.raw_outputscale.data = default_kernel_parameters['C_raw_outputscale'].to(covar_module_C.device)
@@ -674,7 +674,49 @@ def store_data_from_synth_reg(store_path:str, latents:Tensor, inputs:Tensor, tar
     with open(f'{new_folder_path}/dictionary.json', 'w') as json_file:
         json.dump(new_kernel_params, json_file)
 
+def collect_model_gradients(my_model):
+    '''
+    my_model contains several parts of parameters:
+        variational_strategy: (vs)
+            inducing_points_X
+            inducing_points_C
+            _variational_distribution.variational_mean
+            _variational_distribution.chol_variational_covar_X
+            _variational_distribution.chol_variational_covar_C
+        X:
+            q_mu
+            q_log_sigma
+        covar_module_X: (cov_X)
+            raw_outputscale
+            base_kernel.raw_lengthscale
+        covar_module_C: (cov_C)
+            raw_outputscale
+            base_kernel.raw_lengthscale
 
+    '''
+    dict_grads, dict_values = {}, {}
+
+    dict_grads['vs_mean'] = my_model.variational_strategy._variational_distribution.variational_mean.grad.detach().abs().mean()
+    dict_grads['vs_chol_X'] = my_model.variational_strategy._variational_distribution.chol_variational_covar_X.grad.detach().abs().mean()
+    dict_grads['vs_chol_C'] = my_model.variational_strategy._variational_distribution.chol_variational_covar_C.grad.detach().abs().mean()
+    dict_grads['X_q_mu'] = my_model.X.q_mu.grad.detach().abs().mean()
+    dict_grads['X_q_log_sigma'] = my_model.X.q_log_sigma.grad.detach().abs().mean()
+    dict_grads['cov_X_raw_outputscale'] = my_model.covar_module_X.raw_outputscale.grad.detach().abs().mean()
+    dict_grads['cov_X_raw_lengthscale'] = my_model.covar_module_X.base_kernel.raw_lengthscale.grad.detach().abs().mean()
+    dict_grads['cov_C_raw_outputscale'] = my_model.covar_module_C.raw_outputscale.grad.detach().abs().mean()
+    dict_grads['cov_C_raw_lengthscale'] = my_model.covar_module_C.base_kernel.raw_lengthscale.grad.detach().abs().mean()
+    
+    dict_values['vs_mean'] = my_model.variational_strategy._variational_distribution.variational_mean.detach().abs().mean()
+    dict_values['vs_chol_X'] = my_model.variational_strategy._variational_distribution.chol_variational_covar_X.detach().abs().mean()
+    dict_values['vs_chol_C'] = my_model.variational_strategy._variational_distribution.chol_variational_covar_C.detach().abs().mean()
+    dict_values['X_q_mu'] = my_model.X.q_mu.detach().abs().mean()
+    dict_values['X_q_log_sigma'] = my_model.X.q_log_sigma.detach().abs().mean()
+    dict_values['cov_X_raw_outputscale'] = my_model.covar_module_X.raw_outputscale.detach().abs().mean()
+    dict_values['cov_X_raw_lengthscale'] = my_model.covar_module_X.base_kernel.raw_lengthscale.detach().abs().mean()
+    dict_values['cov_C_raw_outputscale'] = my_model.covar_module_C.raw_outputscale.detach().abs().mean()
+    dict_values['cov_C_raw_lengthscale'] = my_model.covar_module_C.base_kernel.raw_lengthscale.detach().abs().mean()
+    
+    return dict_grads, dict_values
 
 ################################################   Classification Utility Functions  ################################################
 
@@ -906,6 +948,50 @@ def MOMC_classification_eval(predictions:Tensor, labels:Tensor) -> Dict[str, Lis
 
 
 
+################################################   CMU Motion Capture Dataset  ################################################
 
 
+def process_motion_capture_data(file_path):
+    # Dictionary with the number of dimensions for each body part
+    # return: np.ndarray; of shape (62, #time_points)
+    # i.e. 62 outputs, each output has #time_points input locations.
+    dimensions_dict = {
+        'root': 6, 'lowerback': 3, 'upperback': 3, 'thorax': 3, 
+        'lowerneck': 3, 'upperneck': 3, 'head': 3, 'rclavicle': 2, 
+        'rhumerus': 3, 'rradius': 1, 'rwrist': 1, 'rhand': 2, 
+        'rfingers': 1, 'rthumb': 2, 'lclavicle': 2, 'lhumerus': 3, 
+        'lradius': 1, 'lwrist': 1, 'lhand': 2, 'lfingers': 1, 
+        'lthumb': 2, 'rfemur': 3, 'rtibia': 1, 'rfoot': 2, 
+        'rtoes': 1, 'lfemur': 3, 'ltibia': 1, 'lfoot': 2, 
+        'ltoes': 1
+    }
 
+    # Calculate the total number of dimensions
+    total_dimensions = sum(dimensions_dict.values())
+
+    # Initialize the numpy array
+    data_array = np.zeros((total_dimensions, 309))
+
+    # Open the file and process each line
+    with open(file_path, 'r') as file:
+        # Skip the first three lines (header)
+        for _ in range(3):
+            next(file)
+
+        current_timestamp = 0
+        current_dimension = 0
+        for line in file:
+            if line.strip().isdigit():
+                # New timestamp line found
+                current_timestamp = int(line.strip()) - 1
+                current_dimension = 0  # Reset dimension counter for each timestamp
+            else:
+                # Process body part data
+                parts = line.strip().split()
+                body_part = parts[0]
+                num_dims = dimensions_dict[body_part]
+                values = np.array([float(v) for v in parts[1:1+num_dims]])
+                data_array[current_dimension:current_dimension+num_dims, current_timestamp] = values
+                current_dimension += num_dims
+
+    return data_array
