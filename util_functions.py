@@ -5,11 +5,15 @@ import json
 import torch
 import matplotlib.pyplot as plt
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from linear_operator.operators import KroneckerProductLinearOperator
+from linear_operator.operators import KroneckerProductLinearOperator, TriangularLinearOperator
+from linear_operator.utils.cholesky import psd_safe_cholesky
+from linear_operator import to_dense
+from linear_operator.operators import MatmulLinearOperator
 from torch import Tensor
 from torch.distributions import MultivariateNormal
 import csv
 import random
+import math
 from typing import List, Dict
 from sklearn.metrics import precision_score, recall_score, f1_score
 
@@ -425,6 +429,58 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     return X, C, sample, default_kernel_parameters
 
 # TODO: non-tidily generating data from MOGP.
+def tidily_sythetic_data_from_MOGP_smartly(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None, random_seed=0):
+    '''
+    follows same methodology as above for generating synthetic dataset ... 
+    but the implementation is more smart ... (no inverting whole big covariance matrix is required)
+    '''
+    # Set random seeds for reproducibility
+    np.random.seed(random_seed)  # Set seed for NumPy
+    torch.manual_seed(random_seed)  # Set seed for PyTorch
+
+    index_dim = 1
+
+    if kernel_parameters == None:
+        default_kernel_parameters = {'X_raw_outputscale': torch.tensor(0.0), 'X_raw_lengthscale': torch.tensor([0.1 for _ in range(latent_dim)]),
+                                     'C_raw_outputscale': torch.tensor(0.9), 'C_raw_lengthscale': torch.tensor([0.1 for _ in range(index_dim)])}
+    else:
+        default_kernel_parameters = kernel_parameters
+
+    if C_ == None:
+        C = Tensor(np.linspace(-10, 10, n_C)) # inputs in our cases, 1 point every distance 0.5 
+    else:
+        C = C_
+        
+    if X_ == None:
+        X = Tensor(np.random.multivariate_normal([0 for _ in range(latent_dim)], np.eye(latent_dim), (n_X,))) # 20 outputs, sampled from Normal(0, I)
+    else:
+        X = X_
+
+    covar_module_X = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
+    covar_module_C = ScaleKernel(RBFKernel(ard_num_dims=index_dim))
+    # TODO: Try another implementation ... 
+    covar_module_X.raw_outputscale.data = default_kernel_parameters['X_raw_outputscale'].to(covar_module_X.device)
+    covar_module_X.base_kernel.raw_lengthscale.data = default_kernel_parameters['X_raw_lengthscale'].to(covar_module_X.device) 
+    covar_module_C.raw_outputscale.data = default_kernel_parameters['C_raw_outputscale'].to(covar_module_C.device)
+    covar_module_C.base_kernel.raw_lengthscale.data = default_kernel_parameters['C_raw_lengthscale'].to(covar_module_C.device)
+
+    covar_X = covar_module_X(X)
+    print('covar_X has shape', covar_X.shape)
+    covar_C = covar_module_C(C)
+    print('covar_C has shape', covar_C.shape)
+    total_dim = int(covar_X.shape[0] * covar_C.shape[0])
+    Chol_X = TriangularLinearOperator(psd_safe_cholesky(to_dense(covar_X)))
+    Chol_C = TriangularLinearOperator(psd_safe_cholesky(to_dense(covar_C)))
+
+    # Chol_whole = KroneckerProductLinearOperator(Chol_X, Chol_C).to_dense().detach()
+    # NOTE using mixed Kronecker matrix-vector product property
+    standard_noise_matrix = torch.randn(n_C, n_X)
+    sample_matrix = (MatmulLinearOperator(Chol_C, standard_noise_matrix).to_dense().detach() @ Chol_X.to_dense().detach().transpose(-1, -2))
+    sample_ = sample_matrix.reshape(-1)
+    extra_noise = torch.randn(total_dim) * math.sqrt(noise_scale)
+
+    sample = sample_ + extra_noise
+    return X, C, sample, default_kernel_parameters
 
 # For Synthetic dataset experiment
 def sample_index_X_and_C_from_list(C_index_list, batch_size_X, batch_size_C):
@@ -951,7 +1007,7 @@ def MOMC_classification_eval(predictions:Tensor, labels:Tensor) -> Dict[str, Lis
 ################################################   CMU Motion Capture Dataset  ################################################
 
 
-def process_motion_capture_data(file_path):
+def process_motion_capture_data(file_path, num_times=309):
     # Dictionary with the number of dimensions for each body part
     # return: np.ndarray; of shape (62, #time_points)
     # i.e. 62 outputs, each output has #time_points input locations.
@@ -970,7 +1026,7 @@ def process_motion_capture_data(file_path):
     total_dimensions = sum(dimensions_dict.values())
 
     # Initialize the numpy array
-    data_array = np.zeros((total_dimensions, 309))
+    data_array = np.zeros((total_dimensions, num_times))
 
     # Open the file and process each line
     with open(file_path, 'r') as file:
