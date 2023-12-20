@@ -429,7 +429,7 @@ def tidily_sythetic_data_from_MOGP(n_C:int=700, n_X:int=20, latent_dim:int=2, no
     return X, C, sample, default_kernel_parameters
 
 # TODO: non-tidily generating data from MOGP.
-def tidily_sythetic_data_from_MOGP_smartly(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None, random_seed=0):
+def tidily_sythetic_data_from_MOGP_smartly(n_C:int=700, n_X:int=20, latent_dim:int=2, noise_scale:int=0.05, X_:Tensor=None, C_:Tensor=None, kernel_parameters: dict=None, random_seed=10):
     '''
     follows same methodology as above for generating synthetic dataset ... 
     but the implementation is more smart ... (no inverting whole big covariance matrix is required)
@@ -465,18 +465,55 @@ def tidily_sythetic_data_from_MOGP_smartly(n_C:int=700, n_X:int=20, latent_dim:i
     covar_module_C.base_kernel.raw_lengthscale.data = default_kernel_parameters['C_raw_lengthscale'].to(covar_module_C.device)
 
     covar_X = covar_module_X(X)
-    print('covar_X has shape', covar_X.shape)
+    # print('covar_X has shape', covar_X.shape)
     covar_C = covar_module_C(C)
-    print('covar_C has shape', covar_C.shape)
+    # print('covar_C has shape', covar_C.shape)
     total_dim = int(covar_X.shape[0] * covar_C.shape[0])
     Chol_X = TriangularLinearOperator(psd_safe_cholesky(to_dense(covar_X)))
     Chol_C = TriangularLinearOperator(psd_safe_cholesky(to_dense(covar_C)))
 
-    # Chol_whole = KroneckerProductLinearOperator(Chol_X, Chol_C).to_dense().detach()
+    ### Approach 0:
+    # K + sigma^2 * I 
+    # covar_final = KroneckerProductLinearOperator(covar_X, covar_C).add_jitter(noise_scale).to_dense().detach()
+    # print('covar_final has shape', covar_final.shape)
+    # mean_final = Tensor([0. for _ in range(n_C * n_X)])
+    # sample = MultivariateNormal(mean_final, covar_final)
+
+    ### Approach 1:
     # NOTE using mixed Kronecker matrix-vector product property
-    standard_noise_matrix = torch.randn(n_C, n_X)
-    sample_matrix = (MatmulLinearOperator(Chol_C, standard_noise_matrix).to_dense().detach() @ Chol_X.to_dense().detach().transpose(-1, -2))
-    sample_ = sample_matrix.reshape(-1)
+    # NOTE: something WRONG here! Samples looks have high variance.
+    # standard_noise_matrix = torch.randn(n_C, n_X)
+    # sample_matrix = (MatmulLinearOperator(Chol_C, standard_noise_matrix).to_dense().detach() @ Chol_X.to_dense().detach().transpose(-1, -2))
+    # sample_ = sample_matrix.reshape(-1)
+    
+    ### Approach 2: 
+    # Chol_whole_2 = KroneckerProductLinearOperator(Chol_X, Chol_C).to_dense().detach()
+    # print('Chol_whole_2', Chol_whole_2)
+    # sample_ = Chol_whole_2 @ torch.randn(total_dim)
+
+    ### Approach 3:
+    # Iteratively using approach 2, so that only small RAM is necessary
+    it_stop = False
+    it_latent_length = 20
+    it_start = 0
+    it_end = it_start + it_latent_length
+    standard_noise = torch.randn(total_dim)
+    sample_ = torch.zeros(n_X, n_C)
+
+    while it_stop == False:
+        it_Chol_X = Chol_X[it_start:it_end, :] # of shape (it_end-it_start, n_X)
+        it_Chol_whole = KroneckerProductLinearOperator(it_Chol_X, Chol_C).to_dense().detach() # of shape (it_end-it_start)*n_C, n_X*n_C
+        sample_[it_start:it_end , :] = ( it_Chol_whole @  standard_noise).reshape(int(it_end-it_start), n_C)
+
+        if it_end < n_X:
+            it_start += it_latent_length
+            it_end = min(it_end+it_latent_length, n_X)
+        else:
+            it_stop = True
+
+    sample_ = sample_.reshape(-1)
+
+    torch.manual_seed(98 + random_seed) # make sure this is a different random sample.
     extra_noise = torch.randn(total_dim) * math.sqrt(noise_scale)
 
     sample = sample_ + extra_noise
