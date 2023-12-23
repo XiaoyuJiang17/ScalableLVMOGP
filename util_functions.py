@@ -811,6 +811,38 @@ def collect_model_gradients(my_model):
     
     return dict_grads, dict_values
 
+def compute_signal_to_noise_ratio(time_series:Tensor):
+    '''
+    Compute SNR for all time series.
+    Arg:
+        time_series: of shape (num_time_series, num_timeframes)
+    Return:
+        a list of SNR
+    '''
+    snr_list = []
+    for i in range(time_series.shape[0]):
+        # Calculate the mean (signal)
+        signal_mean = time_series[i].mean()
+        
+        # Calculate the standard deviation (noise)
+        noise_std = time_series[i].std()
+
+        # Compute SNR. If noise_std is zero, handle the division by zero case.
+        if noise_std == 0:
+            snr = float('inf')  # Infinite SNR if there is no noise
+        else:
+            snr = signal_mean / noise_std
+
+        # Convert to dB (20*log10(snr)) and append to list
+        # We use 20*log10 for amplitude ratio. For power ratio, it would be 10*log10.
+        snr_db = float(20 * np.log10(abs(snr)))
+        snr_list.append(snr_db)
+
+    # Sort the SNR list in descending order and get the sorted indices
+    sorted_indices = np.argsort(snr_list)[::-1]
+
+    return snr_list, sorted_indices.tolist()
+
 ################################################   Classification Utility Functions  ################################################
 
 def clf_sample_f_index_everyoutput(my_model, clf_list:List, labels:Tensor, num_class_per_output=5, num_input_samples:int=100, re_index_latent_idxs=True):
