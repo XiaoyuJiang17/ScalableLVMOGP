@@ -20,7 +20,7 @@ def _init_pca(Y, latent_dim):
 
 class LVMOGP_SVI(BayesianGPLVM_):
 
-    def __init__(self, n_X, n_C, index_dim, latent_dim, n_inducing_C, n_inducing_X, data_Y, pca=False):
+    def __init__(self, n_X, n_C, index_dim, latent_dim, n_inducing_C, n_inducing_X, data_Y, pca=False, learn_inducing_locations_X=True, learn_inducing_locations_C=True):
         self.n_X = n_X
         self.n_C = n_C
         self.inducing_inputs_X = torch.randn(n_inducing_X, latent_dim)
@@ -28,7 +28,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
         
         q_u = CholeskyKroneckerVariationalDistribution(n_inducing_C, n_inducing_X)
 
-        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_X, self.inducing_inputs_C, q_u, learn_inducing_locations=True)
+        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_X, self.inducing_inputs_C, q_u, learn_inducing_locations_X=learn_inducing_locations_X, learn_inducing_locations_C=learn_inducing_locations_C)
 
         # Define prior for X
         X_prior_mean = torch.zeros(n_X, latent_dim)  # shape: N x Q
@@ -59,7 +59,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
         n_total = int(X.shape[-2] * C.shape[-2])
         # This implementation ONLY works for ZeroMean()
         mean_x = self.mean_module_X(Tensor([i for i in range(n_total)])) 
-        covar_x = KroneckerProductLinearOperator(self.covar_module_X(X), self.covar_module_C(C)).to_dense() 
+        covar_x = KroneckerProductLinearOperator(self.covar_module_X(X), self.covar_module_C(C)).to_dense() # TODO: avoid this !
         # for numerical stability
         covar_x += torch.eye(covar_x.size(0)) * jitter_val
         dist = MultivariateNormal(mean_x, covar_x)

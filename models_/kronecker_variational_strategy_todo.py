@@ -15,6 +15,7 @@ from linear_operator.operators import (
     MatmulLinearOperator,
     SumLinearOperator,
     TriangularLinearOperator,
+    KroneckerProductLinearOperator,
 )
 from linear_operator.utils.cholesky import psd_safe_cholesky
 from linear_operator import to_dense
@@ -51,7 +52,7 @@ class KroneckerVariationalStrategy(Module, ABC):
             self.register_parameter(name="inducing_points_X", parameter=torch.nn.Parameter(inducing_points_X))
         else:
             self.register_buffer("inducing_points_X", inducing_points_X)
-            
+
         if learn_inducing_locations_C:
             self.register_parameter(name="inducing_points_C", parameter=torch.nn.Parameter(inducing_points_C))
         else:
@@ -61,11 +62,16 @@ class KroneckerVariationalStrategy(Module, ABC):
         self._variational_distribution = variational_distribution
         self.register_buffer("variational_params_initialized", torch.tensor(0))
 
-    @cached(name="cholesky_factor", ignore_args=True)
-    def _cholesky_factor(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
+    @cached(name="cholesky_factor_X", ignore_args=True)
+    def _cholesky_factor_X(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
         L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()))
         return TriangularLinearOperator(L)
     
+    @cached(name="cholesky_factor_C", ignore_args=True)
+    def _cholesky_factor_C(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
+        L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()))
+        return TriangularLinearOperator(L)
+
     @property
     @cached(name="prior_distribution_memo")
     def prior_distribution(self) -> MultivariateNormal:
@@ -121,9 +127,6 @@ class KroneckerVariationalStrategy(Module, ABC):
         mini_batch_size = x.shape[-2]
 
         test_mean = self.model.mean_module_X(Tensor([i for i in range(mini_batch_size)]))
-        # Some Some Test Unit.
-        # assert test_mean.square().mean() == 0
-        inducing_output = self.model.forward(inducing_points_X, inducing_points_C, **kwargs) # Kronecker Product happens here
 
         # NOTE: following two tensors contains repeting elements! That's a problem when computing cov matrix!
         full_inputs_X = torch.cat([x, inducing_points_X], dim=-2)
@@ -132,14 +135,9 @@ class KroneckerVariationalStrategy(Module, ABC):
         full_X_covar = self.model.covar_module_X(full_inputs_X)
         full_C_covar = self.model.covar_module_C(full_inputs_C)
 
-        # TODO
-        # another (probably more efficient) approach to implement the term induc_induc_covar, that is: 
-        # induc_induc_covar = KroneckerProductLinearOperator(full_X_covar[mini_batch_size:, mini_batch_size:], 
-        #                             full_C_covar[mini_batch_size:, mini_batch_size:]).add_jitter(self.jitter_val)
-        # NOTE: inducing_output should be annotated to reduce computation.
-
         # Covariance terms
-        induc_induc_covar = inducing_output.lazy_covariance_matrix.add_jitter(self.jitter_val)
+        induc_X_covar = full_X_covar[mini_batch_size:, mini_batch_size:]
+        induc_C_covar = full_C_covar[mini_batch_size:, mini_batch_size:]
         data_data_covar = full_X_covar[:mini_batch_size, :mini_batch_size] * full_C_covar[:mini_batch_size, :mini_batch_size] # elementwise product
 
         induc_X_data_X_covar = full_X_covar[mini_batch_size:, :mini_batch_size] # (n_induc_X, mini_batch_size)
@@ -153,16 +151,33 @@ class KroneckerVariationalStrategy(Module, ABC):
         # broadcasting
         induc_data_covar = induc_X_data_X_covar.to_dense().unsqueeze(1) * induc_C_data_C_covar.to_dense().unsqueeze(0)
         induc_data_covar = induc_data_covar.reshape((n_induc_X*n_induc_C), mini_batch_size)
-        # Some Test Unit.
-        '''
-        input_index = 6 # upper bound mini_batch_size
-        x_inducing_index, c_inducing_index = 7, 14 # upper bounds n_induc_X, n_induc_C
-        assert induc_data_covar[(x_inducing_index * n_induc_C + c_inducing_index), input_index] == full_X_covar[input_index, mini_batch_size + x_inducing_index] * full_C_covar[input_index, mini_batch_size + c_inducing_index]
-        print(stop)
-        '''
+        
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
-        L = self._cholesky_factor(induc_induc_covar)
+        print(induc_X_covar.size(-1))
+        print(induc_X_covar.size(-2))
+        print(induc_C_covar.size(-1))
+        print(induc_C_covar.size(-2))
+
+        L_X_inv = self._cholesky_factor_X(induc_X_covar).solve(torch.eye(induc_X_covar.size(-1), device=induc_X_covar.device, dtype=induc_X_covar.dtype))
+        L_C_inv = self._cholesky_factor_C(induc_C_covar).solve(torch.eye(induc_C_covar.size(-1), device=induc_C_covar.device, dtype=induc_C_covar.dtype))
+        L_inv = KroneckerProductLinearOperator(L_X_inv, L_C_inv).to_dense()
+        
+        if L_inv.shape[0] != induc_data_covar.shape[0]:
+            print('nasty shape incompatibilies error happens!')
+            # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes
+            # TODO: Use a hook fo this
+            try:
+                pop_from_cache_ignore_args(self, "cholesky_factor")
+            except CachingError:
+                pass
+            L_X_inv = self._cholesky_factor_X(induc_X_covar).solve(torch.eye(induc_X_covar.size(-1), device=induc_X_covar.device, dtype=induc_X_covar.dtype))
+            L_C_inv = self._cholesky_factor_C(induc_C_covar).solve(torch.eye(induc_C_covar.size(-1), device=induc_C_covar.device, dtype=induc_C_covar.dtype))
+            L_inv = KroneckerProductLinearOperator(L_X_inv, L_C_inv).to_dense()
+
+        interp_term = (L_inv.to(torch.double) @ induc_data_covar.to(L_inv.dtype)).to(torch.double)
+        '''
+        # L = self._cholesky_factor(induc_induc_covar)
         if L.shape != induc_induc_covar.shape:
             # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes
             # TODO: Use a hook fo this
@@ -172,9 +187,10 @@ class KroneckerVariationalStrategy(Module, ABC):
                 pass
             L = self._cholesky_factor(induc_induc_covar)
         interp_term = L.solve(induc_data_covar.type(_linalg_dtype_cholesky.value())).to(full_inputs_X.dtype)
+        '''
         
         # Compute the mean of q(f)
-        predictive_mean = (interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)).squeeze(-1) + test_mean
+        predictive_mean = (interp_term.transpose(-1, -2).to(torch.double) @ (inducing_values.unsqueeze(-1)).squeeze(-1)).to(torch.double) + test_mean.to(torch.double)
 
         # Compute the covariance of q(f)
         middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1)
