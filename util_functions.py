@@ -828,7 +828,7 @@ def compute_signal_to_noise_ratio(time_series:Tensor):
         noise_std = time_series[i].std()
 
         # Compute SNR. If noise_std is zero, handle the division by zero case.
-        if noise_std == 0:
+        if noise_std <= 1e-4:
             snr = float('inf')  # Infinite SNR if there is no noise
         else:
             snr = signal_mean / noise_std
