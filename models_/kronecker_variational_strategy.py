@@ -64,12 +64,12 @@ class KroneckerVariationalStrategy(Module, ABC):
 
     @cached(name="cholesky_factor_X", ignore_args=True)
     def _cholesky_factor_X(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
-        L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()))
+        L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()), max_tries=4)
         return TriangularLinearOperator(L)
     
     @cached(name="cholesky_factor_C", ignore_args=True)
     def _cholesky_factor_C(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
-        L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()))
+        L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()), max_tries=4)
         return TriangularLinearOperator(L)
 
     @property

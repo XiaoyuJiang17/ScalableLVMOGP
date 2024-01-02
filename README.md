@@ -22,3 +22,9 @@ re-organize files.
 h_mnist_pixel_as_output is different from h-mnist.
 h_mnist_pixel_as_output: every pixel modelled as an output. (data plz see healing_mnist_data_v2)
 h-mnist: every picture modelled as an output. (data plz see healing_mnist_data)
+
+29/12/2023
+
+kronecker_variational_strategy.py is updated, no inverse of kronecker product is implemented, which is replaced by kronecker product of two inverses.
+
+kronecker_variational_strategy_.py is the original implementation.
