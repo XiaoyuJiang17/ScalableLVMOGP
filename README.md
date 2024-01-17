@@ -28,3 +28,9 @@ h-mnist: every picture modelled as an output. (data plz see healing_mnist_data)
 kronecker_variational_strategy.py is updated, no inverse of kronecker product is implemented, which is replaced by kronecker product of two inverses.
 
 kronecker_variational_strategy_.py is the original implementation.
+
+03/01/2024
+
+In h_mnist_pixel_as_output folder,
+lvmogp_all_dims.ipynb are code to model all dims of mnist image,
+lvmogp_selected_dims.ipynb are code to only model selected dims. 

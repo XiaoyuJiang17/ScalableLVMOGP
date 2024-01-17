@@ -452,7 +452,7 @@ def tidily_sythetic_data_from_MOGP_smartly(n_C:int=700, n_X:int=20, latent_dim:i
         C = C_
         
     if X_ == None:
-        X = Tensor(np.random.multivariate_normal([0 for _ in range(latent_dim)], np.eye(latent_dim), (n_X,))) # 20 outputs, sampled from Normal(0, I)
+        X = Tensor(np.random.multivariate_normal([0 for _ in range(latent_dim)], 1 * np.eye(latent_dim), (n_X,))) # 20 outputs, sampled from Normal(0, I)
     else:
         X = X_
 
