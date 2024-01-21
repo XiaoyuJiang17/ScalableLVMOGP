@@ -20,56 +20,47 @@ def _init_pca(Y, latent_dim):
 
 class LVMOGP_SVI(BayesianGPLVM_):
 
-    def __init__(self, n_X, n_C, index_dim, latent_dim, n_inducing_C, n_inducing_X, data_Y, pca=False, learn_inducing_locations_X=True, learn_inducing_locations_C=True):
-        self.n_X = n_X
-        self.n_C = n_C
-        self.inducing_inputs_X = torch.randn(n_inducing_X, latent_dim)
-        self.inducing_inputs_C = torch.randn(n_inducing_C, index_dim)
+    def __init__(self, n_latent, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True):
+
+        self.n_latent = n_latent
+        self.n_input = n_input
+        self.inducing_inputs_latent = torch.randn(n_inducing_latent, latent_dim)
+        self.inducing_inputs_input = torch.randn(n_inducing_input, input_dim)
         
-        q_u = CholeskyKroneckerVariationalDistribution(n_inducing_C, n_inducing_X)
+        q_u = CholeskyKroneckerVariationalDistribution(n_inducing_input, n_inducing_latent)
 
-        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_X, self.inducing_inputs_C, q_u, learn_inducing_locations_X=learn_inducing_locations_X, learn_inducing_locations_C=learn_inducing_locations_C)
+        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_latent, self.inducing_inputs_input, q_u, learn_inducing_locations_latent=learn_inducing_locations_latent, learn_inducing_locations_input=learn_inducing_locations_input)
 
-        # Define prior for X
-        X_prior_mean = torch.zeros(n_X, latent_dim)  # shape: N x Q
-        prior_x = NormalPrior(X_prior_mean, torch.ones_like(X_prior_mean))
+        # Define prior for latent
+        latent_prior_mean = torch.zeros(n_latent, latent_dim)  # shape: N x Q
+        prior_latent = NormalPrior(latent_prior_mean, torch.ones_like(latent_prior_mean))
 
         # Initialise X with PCA or randn
         if pca == True:
-            assert data_Y.shape[0] == self.n_X
-            assert data_Y.shape[1] == self.n_C
-            X_init = _init_pca(data_Y, latent_dim) # Initialise X to PCA 
+            assert data_Y.shape[0] == self.n_latent
+            assert data_Y.shape[1] == self.n_input
+            latent_init = _init_pca(data_Y, latent_dim) # Initialise X to PCA 
         # TODO: how about training a GPLVM_SVI independent model for initialization ...
         else:
-            X_init = torch.nn.Parameter(torch.randn(n_X, latent_dim))
+            latent_init = torch.nn.Parameter(torch.randn(n_latent, latent_dim))
         
         # LatentVariable (c)
-        X = VariationalLatentVariable(n_X, n_C, latent_dim, X_init, prior_x)
+        latent_variables = VariationalLatentVariable(n_latent, n_input, latent_dim, latent_init, prior_latent)
 
-        super().__init__(X, q_f)
+        super().__init__(latent_variables, q_f)
 
-        self.mean_module_X = ZeroMean()
+        self.mean_module = ZeroMean()
 
         # Kernel (acting on latent dimensions)
-        self.covar_module_X = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
+        self.covar_module_latent = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
         # Kernel (acting on index dimensions)
-        self.covar_module_C = ScaleKernel(RBFKernel(ard_num_dims=index_dim))
-    
-    def forward(self, X, C, jitter_val=1e-4):
-        n_total = int(X.shape[-2] * C.shape[-2])
-        # This implementation ONLY works for ZeroMean()
-        mean_x = self.mean_module_X(Tensor([i for i in range(n_total)])) 
-        covar_x = KroneckerProductLinearOperator(self.covar_module_X(X), self.covar_module_C(C)).to_dense() # TODO: avoid this !
-        # for numerical stability
-        covar_x += torch.eye(covar_x.size(0)) * jitter_val
-        dist = MultivariateNormal(mean_x, covar_x)
-        return dist
-    
-    def _get_batch_idx(self, batch_size, sample_X = True):
-        if sample_X == True:
-            valid_indices = np.arange(self.n_X)
+        self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+
+    def _get_batch_idx(self, batch_size, sample_latent = True):
+        if sample_latent == True:
+            valid_indices = np.arange(self.n_latent)
         else:
-            valid_indices = np.arange(self.n_C)
+            valid_indices = np.arange(self.n_input)
         batch_indices = np.random.choice(valid_indices, size=batch_size, replace=False)
         # return np.sort(batch_indices)
         return batch_indices

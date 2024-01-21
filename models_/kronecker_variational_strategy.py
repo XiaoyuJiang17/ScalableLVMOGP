@@ -26,11 +26,11 @@ class KroneckerVariationalStrategy(Module, ABC):
     def __init__(
         self,
         model: ApproximateGP,
-        inducing_points_X: Tensor,
-        inducing_points_C: Tensor,
+        inducing_points_latent: Tensor,
+        inducing_points_input: Tensor,
         variational_distribution: CholeskyKroneckerVariationalDistribution,
-        learn_inducing_locations_X: bool = True,
-        learn_inducing_locations_C: bool = True,
+        learn_inducing_locations_latent: bool = True,
+        learn_inducing_locations_input: bool = True,
         jitter_val: Optional[float] = None,
     ):
         super().__init__()
@@ -39,36 +39,35 @@ class KroneckerVariationalStrategy(Module, ABC):
         # Model
         object.__setattr__(self, "model", model)
 
-        # Inducing points X and C
-        inducing_points_X = inducing_points_X.clone()
-        inducing_points_C = inducing_points_C.clone()
+        # Inducing points latent in space and input space
+        inducing_points_latent = inducing_points_latent.clone()
+        inducing_points_input = inducing_points_input.clone()
 
-        if inducing_points_X.dim() == 1:
-            inducing_points_X = inducing_points_X.unsqueeze(-1)
-        if inducing_points_C.dim() == 1:
-            inducing_points_C = inducing_points_C.unsqueeze(-1)
+        if inducing_points_latent.dim() == 1:
+            inducing_points_latent = inducing_points_latent.unsqueeze(-1)
+        if inducing_points_input.dim() == 1:
+            inducing_points_input = inducing_points_input.unsqueeze(-1)
 
-        if learn_inducing_locations_X:
-            self.register_parameter(name="inducing_points_X", parameter=torch.nn.Parameter(inducing_points_X))
+        if learn_inducing_locations_latent:
+            self.register_parameter(name="inducing_points_latent", parameter=torch.nn.Parameter(inducing_points_latent))
         else:
-            self.register_buffer("inducing_points_X", inducing_points_X)
+            self.register_buffer("inducing_points_latent", inducing_points_latent)
 
-        if learn_inducing_locations_C:
-            self.register_parameter(name="inducing_points_C", parameter=torch.nn.Parameter(inducing_points_C))
+        if learn_inducing_locations_input:
+            self.register_parameter(name="inducing_points_input", parameter=torch.nn.Parameter(inducing_points_input))
         else:
-            self.register_buffer("inducing_points_C", inducing_points_C)
+            self.register_buffer("inducing_points_input", inducing_points_input)
         
         # Variational distribution
         self._variational_distribution = variational_distribution
-        self.register_buffer("variational_params_initialized", torch.tensor(0))
 
-    @cached(name="cholesky_factor_X", ignore_args=True)
-    def _cholesky_factor_X(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
+    @cached(name="cholesky_factor_latent", ignore_args=False)
+    def _cholesky_factor_latent(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
         L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()), max_tries=4)
         return TriangularLinearOperator(L)
     
-    @cached(name="cholesky_factor_C", ignore_args=True)
-    def _cholesky_factor_C(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
+    @cached(name="cholesky_factor_input", ignore_args=False)
+    def _cholesky_factor_input(self, induc_induc_covar: LinearOperator) -> TriangularLinearOperator:
         L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()), max_tries=4)
         return TriangularLinearOperator(L)
 
@@ -92,7 +91,7 @@ class KroneckerVariationalStrategy(Module, ABC):
     @property
     def jitter_val(self) -> float:
         if self._jitter_val is None:
-            return settings.variational_cholesky_jitter.value(dtype=self.inducing_points_X.dtype)
+            return settings.variational_cholesky_jitter.value(dtype=self.inducing_points_latent.dtype)
         return self._jitter_val
 
     @jitter_val.setter
@@ -114,50 +113,50 @@ class KroneckerVariationalStrategy(Module, ABC):
         
     def forward(
         self,
-        x: Tensor,
-        c: Tensor,
-        inducing_points_X: Tensor,
-        inducing_points_C: Tensor,
+        latents: Tensor,
+        inputs: Tensor,
+        inducing_points_latent: Tensor,
+        inducing_points_input: Tensor,
         inducing_values: Tensor, 
-        variational_inducing_covar: Optional[LinearOperator] = None, # after kron_product X (@) C
+        variational_inducing_covar: Optional[LinearOperator] = None,
         **kwargs,
     ) -> MultivariateNormal:
-        # Ensure x, c has the same length, i.e. a (x[i],c[i]) pair jointly determines a prediction value / target value.
-        assert x.shape[-2] == c.shape[-2]
-        mini_batch_size = x.shape[-2]
+        # Ensure latents, inputs has the same length, i.e. a (latents[i],inputs[i]) pair jointly determines a prediction value / target value.
+        assert latents.shape[-2] == inputs.shape[-2]
+        mini_batch_size = latents.shape[-2]
 
-        test_mean = self.model.mean_module_X(Tensor([i for i in range(mini_batch_size)]))
+        # NOTE: following two tensors might contains repeting elements!
+        full_latent = torch.cat([latents, inducing_points_latent], dim=-2)
+        full_input = torch.cat([inputs, inducing_points_input], dim=-2)
 
-        # NOTE: following two tensors might contains repeting elements! That's a problem when computing cov matrix!
-        full_inputs_X = torch.cat([x, inducing_points_X], dim=-2)
-        full_inputs_C = torch.cat([c, inducing_points_C], dim=-2)
-
-        full_X_covar = self.model.covar_module_X(full_inputs_X)
-        full_C_covar = self.model.covar_module_C(full_inputs_C)
+        full_covar_latent = self.model.covar_module_latent(full_latent)
+        full_covar_input = self.model.covar_module_input(full_input)
 
         # Covariance terms
-        induc_X_covar = full_X_covar[mini_batch_size:, mini_batch_size:]
-        induc_C_covar = full_C_covar[mini_batch_size:, mini_batch_size:]
-        data_data_covar = full_X_covar[:mini_batch_size, :mini_batch_size] * full_C_covar[:mini_batch_size, :mini_batch_size] # elementwise product
+        induc_latent_covar = full_covar_latent[mini_batch_size:, mini_batch_size:]
+        induc_input_covar = full_covar_input[mini_batch_size:, mini_batch_size:]
+        data_data_covar = full_covar_latent[:mini_batch_size, :mini_batch_size] * full_covar_input[:mini_batch_size, :mini_batch_size] # elementwise product
 
-        induc_X_data_X_covar = full_X_covar[mini_batch_size:, :mini_batch_size] # (n_induc_X, mini_batch_size)
-        induc_C_data_C_covar = full_C_covar[mini_batch_size:, :mini_batch_size] # (n_induc_C, mini_batch_size)
-        n_induc_X, n_induc_C = inducing_points_X.shape[-2], inducing_points_C.shape[-2]
+        induc_latent_data_latent_covar = full_covar_latent[mini_batch_size:, :mini_batch_size] # (n_induc_latent, mini_batch_size)
+        induc_input_data_input_covar = full_covar_input[mini_batch_size:, :mini_batch_size] # (n_induc_input, mini_batch_size)
+        n_induc_latent, n_induc_input = inducing_points_latent.shape[-2], inducing_points_input.shape[-2]
+
         # Some Test Unit
-        assert induc_X_data_X_covar.shape[-2] == n_induc_X
-        assert induc_C_data_C_covar.shape[-2] == n_induc_C
-        assert induc_X_data_X_covar.shape[-1] == mini_batch_size
-        assert induc_C_data_C_covar.shape[-1] == mini_batch_size
+        # assert induc_latent_data_latent_covar.shape[-2] == n_induc_latent
+        # assert induc_input_data_input_covar.shape[-2] == n_induc_input
+        # assert induc_latent_data_latent_covar.shape[-1] == mini_batch_size
+        # assert induc_input_data_input_covar.shape[-1] == mini_batch_size
+
         # broadcasting
-        induc_data_covar = induc_X_data_X_covar.to_dense().unsqueeze(1) * induc_C_data_C_covar.to_dense().unsqueeze(0)
-        induc_data_covar = induc_data_covar.reshape((n_induc_X*n_induc_C), mini_batch_size)
+        induc_data_covar = induc_latent_data_latent_covar.to_dense().unsqueeze(1) * induc_input_data_input_covar.to_dense().unsqueeze(0)
+        induc_data_covar = induc_data_covar.reshape((n_induc_latent*n_induc_input), mini_batch_size)
         
         # Compute interpolation terms
-        # K_ZZ^{-1/2} K_ZX
+        # K_uu^{-1/2} K_uf
 
-        L_X_inv = self._cholesky_factor_X(induc_X_covar).solve(torch.eye(induc_X_covar.size(-1), device=induc_X_covar.device, dtype=induc_X_covar.dtype))
-        L_C_inv = self._cholesky_factor_C(induc_C_covar).solve(torch.eye(induc_C_covar.size(-1), device=induc_C_covar.device, dtype=induc_C_covar.dtype))
-        L_inv = KroneckerProductLinearOperator(L_X_inv, L_C_inv).to_dense()
+        L_latent_inv = self._cholesky_factor_latent(induc_latent_covar).solve(torch.eye(induc_latent_covar.size(-1), device=induc_latent_covar.device, dtype=induc_latent_covar.dtype))
+        L_input_inv = self._cholesky_factor_input(induc_input_covar).solve(torch.eye(induc_input_covar.size(-1), device=induc_input_covar.device, dtype=induc_input_covar.dtype))
+        L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv).to_dense()
         
         if L_inv.shape[0] != induc_data_covar.shape[0]:
             print('nasty shape incompatibilies error happens!')
@@ -167,24 +166,14 @@ class KroneckerVariationalStrategy(Module, ABC):
                 pop_from_cache_ignore_args(self, "cholesky_factor")
             except CachingError:
                 pass
-            L_X_inv = self._cholesky_factor_X(induc_X_covar).solve(torch.eye(induc_X_covar.size(-1), device=induc_X_covar.device, dtype=induc_X_covar.dtype))
-            L_C_inv = self._cholesky_factor_C(induc_C_covar).solve(torch.eye(induc_C_covar.size(-1), device=induc_C_covar.device, dtype=induc_C_covar.dtype))
-            L_inv = KroneckerProductLinearOperator(L_X_inv, L_C_inv).to_dense()
+            L_latent_inv = self._cholesky_factor_latent(induc_latent_covar).solve(torch.eye(induc_latent_covar.size(-1), device=induc_latent_covar.device, dtype=induc_latent_covar.dtype))
+            L_input_inv = self._cholesky_factor_input(induc_input_covar).solve(torch.eye(induc_input_covar.size(-1), device=induc_input_covar.device, dtype=induc_input_covar.dtype))
+            L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv).to_dense()
+
         interp_term = (L_inv @ induc_data_covar.to(L_inv.dtype))
-        '''
-        # L = self._cholesky_factor(induc_induc_covar)
-        if L.shape != induc_induc_covar.shape:
-            # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes
-            # TODO: Use a hook fo this
-            try:
-                pop_from_cache_ignore_args(self, "cholesky_factor")
-            except CachingError:
-                pass
-            L = self._cholesky_factor(induc_induc_covar)
-        interp_term = L.solve(induc_data_covar.type(_linalg_dtype_cholesky.value())).to(full_inputs_X.dtype)
-        '''
-        # Compute the mean of q(f)
-        predictive_mean = (interp_term.transpose(-1, -2) @ (inducing_values.to(interp_term.dtype).unsqueeze(-1)).squeeze(-1)) + test_mean
+
+        # Compute the mean of q(f), K_fu K_uu^{-1/2} u
+        predictive_mean = (interp_term.transpose(-1, -2) @ (inducing_values.to(interp_term.dtype).unsqueeze(-1)).squeeze(-1))
 
         # Compute the covariance of q(f)
         middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1).to(interp_term.dtype)
@@ -205,15 +194,15 @@ class KroneckerVariationalStrategy(Module, ABC):
         # Return the distribution
         return MultivariateNormal(predictive_mean, predictive_covar)
     
-    def __call__(self, x: Tensor, c: Tensor, prior: bool = False, **kwargs) -> MultivariateNormal:
+    def __call__(self, latents: Tensor, inputs: Tensor, prior: bool = False, **kwargs) -> MultivariateNormal:
         if prior:
-            return self.model.forward(x, c, **kwargs)
+            return self.model.forward(latents, inputs, **kwargs)
 
         if self.training:
             self._clear_cache()
         
-        inducing_points_X = self.inducing_points_X
-        inducing_points_C = self.inducing_points_C
+        inducing_points_latent = self.inducing_points_latent
+        inducing_points_input = self.inducing_points_input
 
         # Get p(u)/q(u)
         variational_dist_u = self.variational_distribution
@@ -221,10 +210,10 @@ class KroneckerVariationalStrategy(Module, ABC):
         # Get q(f)
         if isinstance(variational_dist_u, MultivariateNormal): 
             return super().__call__(
-                x,
-                c,
-                inducing_points_X,
-                inducing_points_C,
+                latents,
+                inputs,
+                inducing_points_latent,
+                inducing_points_input,
                 inducing_values=variational_dist_u.mean,
                 variational_inducing_covar=variational_dist_u.lazy_covariance_matrix,
                 **kwargs,

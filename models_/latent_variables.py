@@ -68,11 +68,8 @@ class VariationalLatentVariable(LatentVariable):
     the latent variable :math:`\\mathbf X`. The variational approximation will be
     an isotropic Gaussian distribution.
 
-    :param int n: Size of the latent space.
-    :param int data_dim: Dimensionality of the :math:`\\mathbf Y` values.
-    :param int latent_dim: Dimensionality of latent space.
-    :param torch.Tensor X_init: initialization for the point estimate of :math:`\\mathbf X`
-    :param ~gpytorch.priors.Prior prior_x: prior for :math:`\\mathbf X`
+    n: number of latent (outputs)
+    data_dim: number of inputs
     """
 
     def __init__(self, n, data_dim, latent_dim, X_init, prior_x):

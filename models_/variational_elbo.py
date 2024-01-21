@@ -27,11 +27,12 @@ class _ApproximateMarginalLogLikelihood(MarginalLogLikelihood, ABC):
             Whether or not to sum the expected NLL with the KL terms (default True)
     """
 
-    def __init__(self, likelihood, model, num_data, beta=1.0, combine_terms=True):
+    def __init__(self, likelihood, model, num_data, beta=1.0, alpha=1.0, combine_terms=True):
         super().__init__(likelihood, model)
         self.combine_terms = combine_terms
         self.num_data = num_data
         self.beta = beta
+        self.alpha = alpha
 
     @abstractmethod
     def _log_likelihood_term(self, approximate_dist_f, target, **kwargs):
@@ -60,7 +61,8 @@ class _ApproximateMarginalLogLikelihood(MarginalLogLikelihood, ABC):
         added_loss = torch.zeros_like(log_likelihood)
         had_added_losses = False
         for added_loss_term in self.model.added_loss_terms():
-            added_loss.add_(added_loss_term.loss())
+            # ONLY one added loss here, which is KL in latent space
+            added_loss.add_(self.alpha * added_loss_term.loss())
             had_added_losses = True
 
         # Log prior term
@@ -130,6 +132,8 @@ class VariationalELBO(_ApproximateMarginalLogLikelihood):
     .. _the beta-VAE paper:
         https://openreview.net/pdf?id=Sy2fzU9gl
     """
+    def __init__(self, likelihood, model, num_data, beta=1.0, alpha=1.0, combine_terms=True):
+        super().__init__(likelihood, model, num_data, beta, alpha, combine_terms)
 
     def _log_likelihood_term(self, variational_dist_f, target, **kwargs):
         return self.likelihood.expected_log_prob(target, variational_dist_f, **kwargs).sum(-1)
