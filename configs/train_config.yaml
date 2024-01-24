@@ -1,15 +1,15 @@
-lr: 0.1
-step_size: 20
-gamma: 0.95
-n_iterations: 5000
-num_latent_MC: 1
-beta: 1.0
-alpha: 1.0
-training_losses_figure_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/loss.png'
-model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/model_weight.pth'
-likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/likelihood_weight.pth'
-n_latent: 100
+# seed
+random_seed: 12
+
+# data
+dataset_type: 'synthetic_regression'
+data_Y_squeezed_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/target_data.csv'
+data_inputs_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/inputs.csv'
+
+# model
+n_latent: 5000
 n_input: 50
+n_input_train: 25
 input_dim: 1
 latent_dim: 2
 n_inducing_input: 30
@@ -21,13 +21,26 @@ learn_inducing_locations_latent: True
 learn_inducing_locations_input: True
 latent_kernel_type: 'Scale_RBF'
 input_kernel_type: 'Scale_RBF'
-init_likelihood_noise: 0.05
+beta: 1.0
+alpha: 1.0
+
+# model initialization
+init_likelihood_raw_noise: -2.973
 init_inducing_input_LB: -10
 init_inducing_input_UB: 10
-dataset_type: 'synthetic_regression'
-data_Y_squeezed_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_100/target_data.csv'
-data_inputs_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_100/inputs.csv'
-n_input_train: 25
-random_seed: 345
+
+# optimizer
+lr: 0.1
+step_size: 20
+gamma: 0.95
+
+# training
+n_iterations: 1000
+num_latent_MC: 5
 model_max_grad_norm: 1
 likeli_max_grad_norm: 0.1
+
+# save
+training_losses_figure_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/loss.png'
+model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/model_weight.pth'
+likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/likelihood_weight.pth'
