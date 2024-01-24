@@ -64,7 +64,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
         # Kernel (acting on index dimensions)
         if input_kernel_type == 'Scale_RBF':
             self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
-
+        
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:
             valid_indices = np.arange(self.n_latent)
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     #### Model Initialization ... 
 
     my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)) 
-    my_likelihood.noise = Tensor([config['init_likelihood_noise']])
+    my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']])
 
     #### Training the model
 

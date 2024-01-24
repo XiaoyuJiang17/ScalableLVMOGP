@@ -20,7 +20,7 @@ def _init_pca(Y, latent_dim):
 
 class LVMOGP_SVI(BayesianGPLVM_):
 
-    def __init__(self, n_latent, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True):
+    def __init__(self, n_latent, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True, latent_kernel_type=None, input_kernel_type=None):
 
         self.n_latent = n_latent
         self.n_input = n_input
@@ -55,6 +55,16 @@ class LVMOGP_SVI(BayesianGPLVM_):
         self.covar_module_latent = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
         # Kernel (acting on index dimensions)
         self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+
+    def forward(self, X, C, jitter_val=1e-4):
+        n_total = int(X.shape[-2] * C.shape[-2])
+        # This implementation ONLY works for ZeroMean()
+        mean_x = self.mean_module(Tensor([i for i in range(n_total)])) 
+        covar_x = KroneckerProductLinearOperator(self.covar_module_latent(X), self.covar_module_input(C)).to_dense() # TODO: avoid this !
+        # for numerical stability
+        covar_x += torch.eye(covar_x.size(0)) * jitter_val
+        dist = MultivariateNormal(mean_x, covar_x)
+        return dist
 
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:

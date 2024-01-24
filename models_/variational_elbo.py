@@ -71,6 +71,7 @@ class _ApproximateMarginalLogLikelihood(MarginalLogLikelihood, ABC):
             log_prior.add_(prior.log_prob(closure(module)).sum().div(self.num_data))
 
         if self.combine_terms:
+            # print('log_likelihood :' + str(log_likelihood) + 'kl_divergence :' + str(kl_divergence) + 'added_loss :' + str(added_loss))
             return log_likelihood - kl_divergence + log_prior - added_loss
         else:
             if had_added_losses:

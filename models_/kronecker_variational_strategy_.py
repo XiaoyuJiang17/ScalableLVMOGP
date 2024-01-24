@@ -25,11 +25,11 @@ class KroneckerVariationalStrategy(Module, ABC):
     def __init__(
         self,
         model: ApproximateGP,
-        inducing_points_X: Tensor,
-        inducing_points_C: Tensor,
+        inducing_points_latent: Tensor,
+        inducing_points_input: Tensor,
         variational_distribution: CholeskyKroneckerVariationalDistribution,
-        learn_inducing_locations_X: bool = True,
-        learn_inducing_locations_C: bool = True,
+        learn_inducing_locations_latent: bool = True,
+        learn_inducing_locations_input: bool = True,
         jitter_val: Optional[float] = None,
     ):
         super().__init__()
@@ -39,23 +39,23 @@ class KroneckerVariationalStrategy(Module, ABC):
         object.__setattr__(self, "model", model)
 
         # Inducing points X and C
-        inducing_points_X = inducing_points_X.clone()
-        inducing_points_C = inducing_points_C.clone()
+        inducing_points_latent = inducing_points_latent.clone()
+        inducing_points_input = inducing_points_input.clone()
 
-        if inducing_points_X.dim() == 1:
-            inducing_points_X = inducing_points_X.unsqueeze(-1)
-        if inducing_points_C.dim() == 1:
-            inducing_points_C = inducing_points_C.unsqueeze(-1)
+        if inducing_points_latent.dim() == 1:
+            inducing_points_latent = inducing_points_latent.unsqueeze(-1)
+        if inducing_points_input.dim() == 1:
+            inducing_points_input = inducing_points_input.unsqueeze(-1)
 
-        if learn_inducing_locations_X:
-            self.register_parameter(name="inducing_points_X", parameter=torch.nn.Parameter(inducing_points_X))
+        if learn_inducing_locations_latent:
+            self.register_parameter(name="inducing_points_latent", parameter=torch.nn.Parameter(inducing_points_latent))
         else:
-            self.register_buffer("inducing_points_X", inducing_points_X)
+            self.register_buffer("inducing_points_latent", inducing_points_latent)
             
-        if learn_inducing_locations_C:
-            self.register_parameter(name="inducing_points_C", parameter=torch.nn.Parameter(inducing_points_C))
+        if learn_inducing_locations_input:
+            self.register_parameter(name="inducing_points_input", parameter=torch.nn.Parameter(inducing_points_input))
         else:
-            self.register_buffer("inducing_points_C", inducing_points_C)
+            self.register_buffer("inducing_points_input", inducing_points_input)
         
         # Variational distribution
         self._variational_distribution = variational_distribution
@@ -86,7 +86,7 @@ class KroneckerVariationalStrategy(Module, ABC):
     @property
     def jitter_val(self) -> float:
         if self._jitter_val is None:
-            return settings.variational_cholesky_jitter.value(dtype=self.inducing_points_X.dtype)
+            return settings.variational_cholesky_jitter.value(dtype=self.inducing_points_latent.dtype)
         return self._jitter_val
 
     @jitter_val.setter
@@ -110,8 +110,8 @@ class KroneckerVariationalStrategy(Module, ABC):
         self,
         x: Tensor,
         c: Tensor,
-        inducing_points_X: Tensor,
-        inducing_points_C: Tensor,
+        inducing_points_latent: Tensor,
+        inducing_points_input: Tensor,
         inducing_values: Tensor, 
         variational_inducing_covar: Optional[LinearOperator] = None, # after kron_product X (@) C
         **kwargs,
@@ -120,17 +120,17 @@ class KroneckerVariationalStrategy(Module, ABC):
         assert x.shape[-2] == c.shape[-2]
         mini_batch_size = x.shape[-2]
 
-        test_mean = self.model.mean_module_X(Tensor([i for i in range(mini_batch_size)]))
+        test_mean = self.model.mean_module(Tensor([i for i in range(mini_batch_size)]))
         # Some Some Test Unit.
         # assert test_mean.square().mean() == 0
-        inducing_output = self.model.forward(inducing_points_X, inducing_points_C, **kwargs) # Kronecker Product happens here
+        inducing_output = self.model.forward(inducing_points_latent, inducing_points_input, **kwargs) # Kronecker Product happens here
 
         # NOTE: following two tensors contains repeting elements! That's a problem when computing cov matrix!
-        full_inputs_X = torch.cat([x, inducing_points_X], dim=-2)
-        full_inputs_C = torch.cat([c, inducing_points_C], dim=-2)
+        full_inputs_X = torch.cat([x, inducing_points_latent], dim=-2)
+        full_inputs_C = torch.cat([c, inducing_points_input], dim=-2)
 
-        full_X_covar = self.model.covar_module_X(full_inputs_X)
-        full_C_covar = self.model.covar_module_C(full_inputs_C)
+        full_X_covar = self.model.covar_module_latent(full_inputs_X)
+        full_C_covar = self.model.covar_module_input(full_inputs_C)
 
         # TODO
         # another (probably more efficient) approach to implement the term induc_induc_covar, that is: 
@@ -144,7 +144,7 @@ class KroneckerVariationalStrategy(Module, ABC):
 
         induc_X_data_X_covar = full_X_covar[mini_batch_size:, :mini_batch_size] # (n_induc_X, mini_batch_size)
         induc_C_data_C_covar = full_C_covar[mini_batch_size:, :mini_batch_size] # (n_induc_C, mini_batch_size)
-        n_induc_X, n_induc_C = inducing_points_X.shape[-2], inducing_points_C.shape[-2]
+        n_induc_X, n_induc_C = inducing_points_latent.shape[-2], inducing_points_input.shape[-2]
         # Some Test Unit
         assert induc_X_data_X_covar.shape[-2] == n_induc_X
         assert induc_C_data_C_covar.shape[-2] == n_induc_C
@@ -202,8 +202,8 @@ class KroneckerVariationalStrategy(Module, ABC):
         if self.training:
             self._clear_cache()
         
-        inducing_points_X = self.inducing_points_X
-        inducing_points_C = self.inducing_points_C
+        inducing_points_latent = self.inducing_points_latent
+        inducing_points_input = self.inducing_points_input
 
         # Get p(u)/q(u)
         variational_dist_u = self.variational_distribution
@@ -213,8 +213,8 @@ class KroneckerVariationalStrategy(Module, ABC):
             return super().__call__(
                 x,
                 c,
-                inducing_points_X,
-                inducing_points_C,
+                inducing_points_latent,
+                inducing_points_input,
                 inducing_values=variational_dist_u.mean,
                 variational_inducing_covar=variational_dist_u.lazy_covariance_matrix,
                 **kwargs,
