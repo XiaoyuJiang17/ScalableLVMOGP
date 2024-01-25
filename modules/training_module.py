@@ -92,4 +92,4 @@ def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_lik
     torch.save(my_model.state_dict(), config['model_path'])
     torch.save(my_likelihood.state_dict(), config['likelihood_path'])    
 
-    return None
+    return total_training_time

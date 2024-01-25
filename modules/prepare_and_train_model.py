@@ -26,9 +26,9 @@ def _init_pca(Y, latent_dim):
 
 class LVMOGP_SVI(BayesianGPLVM_):
 
-    def __init__(self, n_latent, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y=None, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True, latent_kernel_type='Scale_RBF', input_kernel_type='Scale_RBF'):
+    def __init__(self, n_outputs, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y=None, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True, latent_kernel_type='Scale_RBF', input_kernel_type='Scale_RBF'):
 
-        self.n_latent = n_latent
+        self.n_outputs = n_outputs
         self.n_input = n_input
         self.inducing_inputs_latent = torch.randn(n_inducing_latent, latent_dim)
         self.inducing_inputs_input = torch.randn(n_inducing_input, input_dim)
@@ -38,20 +38,20 @@ class LVMOGP_SVI(BayesianGPLVM_):
         q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_latent, self.inducing_inputs_input, q_u, learn_inducing_locations_latent=learn_inducing_locations_latent, learn_inducing_locations_input=learn_inducing_locations_input)
 
         # Define prior for latent
-        latent_prior_mean = torch.zeros(n_latent, latent_dim)  # shape: N x Q
+        latent_prior_mean = torch.zeros(n_outputs, latent_dim)  # shape: N x Q
         prior_latent = NormalPrior(latent_prior_mean, torch.ones_like(latent_prior_mean))
 
         # Initialise X with PCA or randn
         if pca == True:
-            assert data_Y.shape[0] == self.n_latent
+            assert data_Y.shape[0] == self.n_outputs
             assert data_Y.shape[1] == self.n_input
             latent_init = _init_pca(data_Y, latent_dim) # Initialise X to PCA 
         # TODO: how about training a GPLVM_SVI independent model for initialization ...
         else:
-            latent_init = torch.nn.Parameter(torch.randn(n_latent, latent_dim))
+            latent_init = torch.nn.Parameter(torch.randn(n_outputs, latent_dim))
         
         # LatentVariable (c)
-        latent_variables = VariationalLatentVariable(n_latent, n_input, latent_dim, latent_init, prior_latent)
+        latent_variables = VariationalLatentVariable(n_outputs, n_input, latent_dim, latent_init, prior_latent)
 
         super().__init__(latent_variables, q_f)
 
@@ -67,7 +67,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
         
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:
-            valid_indices = np.arange(self.n_latent)
+            valid_indices = np.arange(self.n_outputs)
         else:
             valid_indices = np.arange(self.n_input)
         batch_indices = np.random.choice(valid_indices, size=batch_size, replace=False)
@@ -77,7 +77,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
 if __name__ == "__main__":
 
     #### Load hyperparameters from .yaml file
-    with open('/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/configs/train_config.yaml', 'r') as file:
+    with open('/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/configs/train_lvmogp_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
     
     # specify random seed
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     #### Define model and likelihood
 
     my_model = LVMOGP_SVI(
-        n_latent = config['n_latent'],
+        n_outputs = config['n_outputs'],
         n_input = config['n_input_train'],
         input_dim = config['input_dim'],
         latent_dim = config['latent_dim'],
@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
     #### Training the model
 
-    train_the_model(
+    total_time = train_the_model(
         data_Y_squeezed = data_Y_squeezed,
         data_inputs = data_inputs,
         idx_ls_of_ls = idx_ls_of_ls,
@@ -122,6 +122,8 @@ if __name__ == "__main__":
         my_likelihood = my_likelihood,
         config = config
     )
+
+    print('total_time is: ', total_time)
 
 
 

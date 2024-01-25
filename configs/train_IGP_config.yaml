@@ -1,0 +1,36 @@
+# seed
+random_seed: 13
+
+# data
+dataset_type: 'synthetic_regression'
+data_Y_squeezed_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_50/target_data.csv'
+data_inputs_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_50/inputs.csv'
+
+# model
+n_outputs: 50
+n_input: 50
+n_input_train: 25
+n_inducing_input: 30
+batch_size_input: 20
+
+# model initialization
+init_likelihood_raw_noise: -2.973 # noise value = 0.05 (ground truth)
+init_inducing_input_LB: -10
+init_inducing_input_UB: 10
+
+# optimizer
+lr: 0.01
+step_size: 20
+gamma: 0.95
+
+# training
+n_iterations: 5000
+model_max_grad_norm: 1
+likeli_max_grad_norm: 0.1
+
+# save
+model_and_likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/MultiIGPs_models_and_likelihoods.pth'
+store_all_loss: True
+all_training_loss_file: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/all_training_loss.csv'
+
+

@@ -25,7 +25,7 @@ beta: 1.0
 alpha: 1.0
 
 # model initialization
-init_likelihood_raw_noise: -2.973
+init_likelihood_raw_noise: -2.973 # noise value = 0.05 (ground truth)
 init_inducing_input_LB: -10
 init_inducing_input_UB: 10
 
