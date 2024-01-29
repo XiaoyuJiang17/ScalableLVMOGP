@@ -3,11 +3,11 @@ random_seed: 12
 
 # data
 dataset_type: 'synthetic_regression'
-data_Y_squeezed_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/target_data.csv'
-data_inputs_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/inputs.csv'
+data_Y_squeezed_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_100/target_data.csv'
+data_inputs_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/synth_regression/smartly_generated/ninputs_50_nlatents_100/inputs.csv'
 
 # model
-n_latent: 5000
+n_outputs: 100
 n_input: 50
 n_input_train: 25
 input_dim: 1
