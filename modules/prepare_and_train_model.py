@@ -10,7 +10,7 @@ from gpytorch.priors import NormalPrior
 from models_.latent_variables import VariationalLatentVariable
 from models_.gaussian_likelihood import GaussianLikelihood
 from gpytorch.means import ZeroMean
-from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.kernels import ScaleKernel, RBFKernel, PeriodicKernel
 from torch import Tensor
 from gpytorch.distributions import MultivariateNormal
 import numpy as np
@@ -64,6 +64,8 @@ class LVMOGP_SVI(BayesianGPLVM_):
         # Kernel (acting on index dimensions)
         if input_kernel_type == 'Scale_RBF':
             self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+        elif input_kernel_type == 'Scale_Periodic':
+            self.covar_module_input = ScaleKernel(PeriodicKernel())
         
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:
@@ -77,7 +79,9 @@ class LVMOGP_SVI(BayesianGPLVM_):
 if __name__ == "__main__":
 
     #### Load hyperparameters from .yaml file
-    with open('/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/configs/train_lvmogp_config.yaml', 'r') as file:
+
+    root_config = '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/configs/'
+    with open(f'{root_config}/spatiotemp_lvmogp_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
     
     # specify random seed
@@ -88,6 +92,10 @@ if __name__ == "__main__":
 
     if config['dataset_type'] == 'synthetic_regression':
         data_inputs, data_Y_squeezed, idx_ls_of_ls, *arg = prepare_synthetic_regression_data(config)
+    
+    elif config['dataset_type'] == 'spatio_temporal_data':
+        assert config['latent_dim'] == 2
+        data_inputs, data_Y_squeezed, idx_ls_of_ls, _, lon_lat_tensor, *arg = prepare_spatio_temp_data(config)
     
     #### Define model and likelihood
 
@@ -108,11 +116,22 @@ if __name__ == "__main__":
     my_likelihood = GaussianLikelihood()
 
     #### Model Initialization ... 
-
+    
     my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)) 
     my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']])
 
-    #### Training the model
+    if config['dataset_type'] == 'spatio_temporal_data':
+
+        if config['init_latents'] == True and config['fix_latents_mean'] == True:
+            # NOTE X.q_log_sigma is still trainable
+            my_model.X.q_mu.data = lon_lat_tensor # config['latent_dim'] = 2
+            my_model.X.q_mu.requires_grad = False
+            my_model.X.q_log_sigma.requires_grad = False
+        
+        else:
+            NotImplementedError
+
+    #### Training the model ... 
 
     total_time = train_the_model(
         data_Y_squeezed = data_Y_squeezed,

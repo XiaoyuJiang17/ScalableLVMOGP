@@ -124,6 +124,8 @@ class KroneckerVariationalStrategy(Module, ABC):
         # Ensure latents, inputs has the same length, i.e. a (latents[i],inputs[i]) pair jointly determines a prediction value / target value.
         assert latents.shape[-2] == inputs.shape[-2]
         mini_batch_size = latents.shape[-2]
+        latents, inputs = latents.to(torch.double), inputs.to(torch.double)
+        inducing_points_latent, inducing_points_input = inducing_points_latent.to(torch.double), inducing_points_input.to(torch.double)
 
         # NOTE: following two tensors might contains repeting elements!
         full_latent = torch.cat([latents, inducing_points_latent], dim=-2)

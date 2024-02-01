@@ -23,7 +23,7 @@ def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_lik
         config: 
     '''
     number_all = config['n_outputs'] * config['n_input_train']
-    my_mll = VariationalELBO(my_likelihood, my_model, num_data=number_all)
+    # my_mll = VariationalELBO(my_likelihood, my_model, num_data=number_all)
 
     # optimizer and scheduler
     optimizer = torch.optim.Adam([
