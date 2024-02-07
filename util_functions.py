@@ -1278,6 +1278,7 @@ def integration_prediction_func(test_input, output_index, my_model, common_backg
 def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common_background_information=None, approach='mean', not4visual=True, n_data4visual=0):
     '''
     Perform inference on all inputs and outputs pairs, two possible approaches: mean and integration. 
+    my_model: LVMOGP based model.
     '''
     my_model.eval()
     my_likelihood.eval()
@@ -1337,7 +1338,7 @@ def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common
             
     return all_pred_mean, all_pred_var
 
-## Evaluation on single picked output
+## Evaluation on single picked output: LVMOGP based model
 
 def evaluate_on_single_output(
         function_index,
@@ -1387,3 +1388,113 @@ def evaluate_on_single_output(
     gp_pred_std = all_pred_var4visual.sqrt()[gp4visual_start:gp4visual_end]
 
     return train_input, train_target, test_input, test_target, gp_pred_mean, gp_pred_std, performance_dirct
+
+## Evaluation on all outputs, return every thing needed for performance reporting and plotting: MultiIGP
+
+def predict_and_evaluate_igp(MultiIGP,
+                            config,
+                            data_inputs, 
+                            data_Y_squeezed, 
+                            ls_of_ls_train_input, 
+                            ls_of_ls_test_input, 
+                            train_sample_idx_ls, 
+                            test_sample_idx_ls,
+                            n_points4visualization=500
+                            ):
+    
+    # To store all results, and return 
+    result_dict = {}
+
+    """  Preparation  """
+    # The following piece of code copied from training_IGP.py file, and also igp_synthetic_regression.ipynb.
+    # The following lists consist of datasets for all outputs.
+    list_train_X, list_train_Y = [], [] 
+    list_test_X, list_test_Y = [], []
+
+    # split data_Y_squeezed into train/test part. NOTE: that's train/test target data for all outputs.
+    data_Y_train_squeezed = data_Y_squeezed[train_sample_idx_ls]
+    data_Y_test_squeezed = data_Y_squeezed[test_sample_idx_ls]
+
+    n_input_test = config['n_input'] - config['n_input_train']
+    ##### ------------------------------------------------------------------------
+    for i in range(config['n_outputs']):
+        # start and end for current output, idx used to pick data for only current output
+        idgp_train_start = i * config['n_input_train']
+        idgp_train_end = idgp_train_start + config['n_input_train']
+
+        idgp_test_start = i * n_input_test
+        idgp_test_end = idgp_test_start + n_input_test
+
+        # training data for current output
+        train_X = data_inputs[ls_of_ls_train_input[i]]
+        train_Y = data_Y_train_squeezed[idgp_train_start:idgp_train_end]
+        assert train_X.shape ==  train_Y.shape == torch.Size([config['n_input_train']])
+        list_train_X.append(train_X)
+        list_train_Y.append(train_Y)
+
+        # testing data for current output
+        test_X = data_inputs[ls_of_ls_test_input[i]]
+        test_Y = data_Y_test_squeezed[idgp_test_start:idgp_test_end]
+        assert test_X.shape ==  test_Y.shape == torch.Size([n_input_test])
+        list_test_X.append(test_X)
+        list_test_Y.append(test_Y)
+    
+    """  Testing  """
+    # for compute overall (all outputs) performance
+    train_error_square_sum, test_error_square_sum, train_error_length, test_error_length, train_nll_sum, test_nll_sum = 0., 0., 0., 0., 0., 0.
+
+    # For visualization
+    n_points4visualization = 500
+    tensor_inputs4visualization = Tensor(np.linspace(config['min_input_bound'], config['max_input_bound'], n_points4visualization).reshape(-1, 1)) 
+    list_train_output_dist, list_test_output_dist, list_output_dist4visual = [], [], []
+
+    for j in range(config['n_outputs']):
+        curr_model = MultiIGP.get_model(j)
+        curr_likelihood = MultiIGP.get_likelihood(j)
+
+        # Inference for train and test data
+        curr_train_output_dist = curr_likelihood(curr_model(list_train_X[j]))
+        curr_test_output_dist  = curr_likelihood(curr_model(list_test_X[j]))
+
+        # Inference for data points for visualization
+        visual_output_dist = curr_likelihood(curr_model(tensor_inputs4visualization))
+
+        # store them for following visualization
+        # list_train_output_dist.append(curr_train_output_dist)
+        # list_test_output_dist.append(curr_test_output_dist)
+        list_output_dist4visual.append(visual_output_dist)
+
+        # RMSE
+        curr_train_suqare_errors = (curr_train_output_dist.loc.detach() - list_train_Y[j]).square()
+        curr_test_square_errors = (curr_test_output_dist.loc.detach() - list_test_Y[j]).square()
+        train_error_square_sum += curr_train_suqare_errors.sum()
+        test_error_square_sum  += curr_test_square_errors.sum()
+        print('-----' * 10)
+        print(str(j) + 'th Model Train RMSE: ', curr_train_suqare_errors.mean().sqrt())
+        print(str(j) + 'th Model Test RMSE: ', curr_test_square_errors.mean().sqrt())
+
+        # NLL
+        train_nll_ = neg_log_likelihood(list_train_Y[j], curr_train_output_dist.loc.detach(), curr_train_output_dist.variance.detach())
+        test_nll_ = neg_log_likelihood(list_test_Y[j], curr_test_output_dist.loc.detach(), curr_test_output_dist.variance.detach())
+        train_nll_sum += train_nll_ * len(list_train_Y[j])
+        test_nll_sum  += test_nll_ *  len(list_test_Y[j])
+        print(str(j) + 'th Model Train NLL: ', train_nll_)
+        print(str(j) + 'th Model Test NLL: ', test_nll_)
+
+        train_error_length += len(list_train_Y[j])
+        test_error_length += len(list_test_Y[j])
+
+    result_dict['train_error_square_sum'] = train_error_square_sum
+    result_dict['train_error_length'] = train_error_length
+    result_dict['test_error_square_sum'] = test_error_square_sum
+    result_dict['test_error_length'] = test_error_length
+    result_dict['train_nll_sum'] = train_nll_sum
+    result_dict['test_nll_sum'] = test_nll_sum
+    result_dict['list_train_X'] = list_train_X
+    result_dict['list_train_Y'] = list_train_Y
+    result_dict['list_test_X'] = list_test_X
+    result_dict['list_test_Y'] = list_test_Y
+    result_dict['tensor_inputs4visualization'] = tensor_inputs4visualization
+    result_dict['list_output_dist4visual'] = list_output_dist4visual
+
+    return result_dict

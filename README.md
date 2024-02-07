@@ -34,3 +34,6 @@ kronecker_variational_strategy_.py is the original implementation.
 In h_mnist_pixel_as_output folder,
 lvmogp_all_dims.ipynb are code to model all dims of mnist image,
 lvmogp_selected_dims.ipynb are code to only model selected dims. 
+
+7/2/2024
+The saved model end with 2 is the current best model in spatio-temporal dataset. We keep that for future use.

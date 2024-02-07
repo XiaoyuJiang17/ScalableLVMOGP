@@ -12,6 +12,7 @@ n_input: 50
 n_input_train: 25
 n_inducing_input: 30
 batch_size_input: 20
+kernel_type: 'Scale_RBF'
 
 # model initialization
 init_likelihood_raw_noise: -2.973 # noise value = 0.05 (ground truth)
