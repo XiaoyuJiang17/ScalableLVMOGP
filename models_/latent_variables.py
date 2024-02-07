@@ -83,6 +83,7 @@ class VariationalLatentVariable(LatentVariable):
         # Local variational params per latent point with dimensionality latent_dim
         self.q_mu = torch.nn.Parameter(X_init)
         self.q_log_sigma = torch.nn.Parameter(torch.randn(n, latent_dim))
+        # self.q_log_sigma = -5 * torch.ones(n, latent_dim)
         # This will add the KL divergence KL(q(X) || p(X)) to the loss
         self.register_added_loss_term("x_kl")
     

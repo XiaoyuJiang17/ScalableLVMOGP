@@ -35,7 +35,7 @@ step_size: 20
 gamma: 0.95
 
 # training
-n_iterations: 1000
+n_iterations: 5000
 num_latent_MC: 5
 model_max_grad_norm: 1
 likeli_max_grad_norm: 0.1

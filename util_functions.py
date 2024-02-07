@@ -199,6 +199,7 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     gp_X = gp_X.numpy().squeeze()
     inducing_points_X = inducing_points_X.numpy().squeeze()
 
+    plt.figure(figsize=(16, 18))
     # Plot training data as crosses
     plt.scatter(train_X_np, train_Y_np, c='r', marker='x', label='Training Data')
 

@@ -39,6 +39,7 @@ def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_lik
     my_model.train()
     my_likelihood.train()
     start_time = time.time()
+    min_loss_value = 1e+10
     for i in iterator: 
 
         batch_index_latent, batch_index_input = sample_index_X_and_C_from_list(idx_ls_of_ls, batch_size_X = config['batch_size_latent'], batch_size_C = config['batch_size_input'])
@@ -69,6 +70,13 @@ def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_lik
         loss.backward()
 
         loss_value = loss.item()
+
+        # store model every 50 iterations
+        if i > 500 and i % 50 == 0 and loss_value < min_loss_value:
+            print(f'A new model is stored, with current loss value {loss_value}.')
+            torch.save(my_model.state_dict(), config['min_model_path'])
+            torch.save(my_likelihood.state_dict(), config['min_likelihood_path'])  
+            min_loss_value = loss_value
 
         loss_list.append(loss_value)
         iterator.set_description('Loss: ' + str(float(np.round(loss_value, 3))) + ", iter no: " + str(i))

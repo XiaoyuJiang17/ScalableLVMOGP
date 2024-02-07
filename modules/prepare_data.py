@@ -52,6 +52,7 @@ def prepare_spatio_temp_data(config):
         config: containing all information used to construct the data (ready for model training)
     Return:
         lon_lat_tensor: of shape (n_outputs, 2), lat and lon are normalized.
+        data_Y_squeezed:  every output is normalized using training data points.
     '''
     data_Y_tensor = torch.load(config['data_Y_tensor'])
     n_times = data_Y_tensor.shape[0]
@@ -93,7 +94,9 @@ def prepare_spatio_temp_data(config):
 
     translate_bias = config['min_input_bound']
     translate_scale = (config['max_input_bound'] - config['min_input_bound']) / config['n_input']
-    data_inputs =  translate_bias + translate_scale * Tensor([i for i in range(config['n_input'])])
+
+    period_length = config['inputs_period'] if config['inputs_period'] != None else config['n_input']
+    data_inputs =  translate_bias + translate_scale * ( Tensor([i for i in range(config['n_input'])]) % period_length )
 
     # repeate
     ls_of_ls_train_input = [[i for i in range(config['n_input_train'])]] * config['n_outputs']

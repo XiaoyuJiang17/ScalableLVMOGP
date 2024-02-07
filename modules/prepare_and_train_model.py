@@ -10,7 +10,7 @@ from gpytorch.priors import NormalPrior
 from models_.latent_variables import VariationalLatentVariable
 from models_.gaussian_likelihood import GaussianLikelihood
 from gpytorch.means import ZeroMean
-from gpytorch.kernels import ScaleKernel, RBFKernel, PeriodicKernel
+from gpytorch.kernels import ScaleKernel, RBFKernel, PeriodicKernel, MaternKernel
 from torch import Tensor
 from gpytorch.distributions import MultivariateNormal
 import numpy as np
@@ -18,6 +18,7 @@ from linear_operator.operators import KroneckerProductLinearOperator
 import yaml
 from modules.training_module import train_the_model
 from modules.prepare_data import *
+import random
 # ------------------------------------------------------------------------------------------------------------------
 
 def _init_pca(Y, latent_dim):
@@ -61,11 +62,28 @@ class LVMOGP_SVI(BayesianGPLVM_):
         if latent_kernel_type == 'Scale_RBF':
             self.covar_module_latent = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
 
+        #### ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- 
         # Kernel (acting on index dimensions)
         if input_kernel_type == 'Scale_RBF':
             self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+        
+        elif input_kernel_type == 'Scale_Matern5/2':
+            self.covar_module_input = ScaleKernel(MaternKernel(nu=2.5))
+
         elif input_kernel_type == 'Scale_Periodic':
             self.covar_module_input = ScaleKernel(PeriodicKernel())
+        
+        elif input_kernel_type == 'Scale_Periodic_times_Scale_RBF':
+            self.covar_module_input = ScaleKernel(PeriodicKernel()) * ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+
+        elif input_kernel_type == 'Scale_RBF_plus_Scale_Periodic':
+            self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim)) + ScaleKernel(PeriodicKernel())
+        
+        elif input_kernel_type == 'Scale_Matern5/2_Plus_Scale_Periodic':
+            self.covar_module_input = ScaleKernel(MaternKernel(nu=2.5)) + ScaleKernel(PeriodicKernel())
+        
+        elif input_kernel_type == 'Scale_Matern3/2_Plus_Scale_Periodic':
+            self.covar_module_input = ScaleKernel(MaternKernel(nu=1.5)) + ScaleKernel(PeriodicKernel())
         
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:
@@ -85,6 +103,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(file)
     
     # specify random seed
+    random.seed(config['random_seed'])
     np.random.seed(config['random_seed'])
     torch.manual_seed(config['random_seed'])
 
@@ -116,17 +135,22 @@ if __name__ == "__main__":
     my_likelihood = GaussianLikelihood()
 
     #### Model Initialization ... 
+
+    if config['input_kernel_type'] == 'Scale_Periodic_times_Scale_RBF':
+        my_model.covar_module_input.kernels[1].base_kernel.raw_lengthscale.data = torch.tensor([[20.]])
     
-    my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)) 
-    my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']])
+    my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)).to(torch.double) 
+    my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']]).to(torch.double)
 
     if config['dataset_type'] == 'spatio_temporal_data':
 
-        if config['init_latents'] == True and config['fix_latents_mean'] == True:
+        if config['init_latents'] == True:
             # NOTE X.q_log_sigma is still trainable
             my_model.X.q_mu.data = lon_lat_tensor # config['latent_dim'] = 2
-            my_model.X.q_mu.requires_grad = False
-            my_model.X.q_log_sigma.requires_grad = False
+            # my_model.X.q_mu.requires_grad = False
+            # my_model.X.q_log_sigma.requires_grad = False
+            if config['fix_latents_mean'] == True:
+                my_model.X.q_mu.requires_grad = False
         
         else:
             NotImplementedError
