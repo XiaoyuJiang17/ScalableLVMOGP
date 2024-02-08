@@ -72,7 +72,7 @@ class VariationalLatentVariable(LatentVariable):
     data_dim: number of inputs
     """
 
-    def __init__(self, n, data_dim, latent_dim, X_init, prior_x):
+    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, trainable_latent_dim=None):
         super().__init__(n, latent_dim)
 
         self.data_dim = data_dim
@@ -81,7 +81,11 @@ class VariationalLatentVariable(LatentVariable):
         # after initializing on the CPU
 
         # Local variational params per latent point with dimensionality latent_dim
-        self.q_mu = torch.nn.Parameter(X_init)
+        if trainable_latent_dim == None:
+            self.q_mu = torch.nn.Parameter(X_init)
+        else:
+            NotImplementedError
+
         self.q_log_sigma = torch.nn.Parameter(torch.randn(n, latent_dim))
         # self.q_log_sigma = -5 * torch.ones(n, latent_dim)
         # This will add the KL divergence KL(q(X) || p(X)) to the loss
@@ -116,7 +120,56 @@ class VariationalLatentVariable(LatentVariable):
         self.update_added_loss_term("x_kl", x_kl)  # Update the KL term
         return q_x.rsample()
     '''
+class VariationalCatLatentVariable(LatentVariable):
+    """
+    Advanced VariationalLatentVariable.
+    Supports flexible latent variables with only parts of them trainable, i.e Cat of two parts.
+    """
 
+    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, trainable_latent_dim=None):
+        super().__init__(n, latent_dim)
+
+        self.data_dim = data_dim
+        self.prior_x = prior_x
+        # G: there might be some issues here if someone calls .cuda() on their BayesianGPLVM
+        # after initializing on the CPU
+
+        # Local variational params per latent point with dimensionality latent_dim
+        if trainable_latent_dim == None:
+            NotImplementedError
+        else:
+            self.register_parameter('q_mu_1', torch.nn.Parameter(X_init[:, :trainable_latent_dim]))
+            self.register_buffer('q_mu_2', X_init[:, trainable_latent_dim:])
+
+        self.q_log_sigma = torch.nn.Parameter(torch.randn(n, latent_dim))
+        # self.q_log_sigma = -5 * torch.ones(n, latent_dim)
+        # This will add the KL divergence KL(q(X) || p(X)) to the loss
+        self.register_added_loss_term("x_kl")
+    
+    @property
+    def q_mu(self):
+        return torch.cat((self.q_mu_1, self.q_mu_2), dim=1)
+
+    # Save as VariationalLatentVariable implementation
+    def forward(self, batch_idx=None):
+
+        if batch_idx is None:
+            batch_idx = np.arange(self.n) 
+        
+        q_mu_batch = self.q_mu[batch_idx, ...]
+        q_log_sigma_batch = self.q_log_sigma[batch_idx, ...]
+
+        q_x = torch.distributions.Normal(q_mu_batch, q_log_sigma_batch.exp())
+
+        p_mu_batch = self.prior_x.loc[batch_idx, ...]
+        p_var_batch = self.prior_x.variance[batch_idx, ...]
+
+        p_x = torch.distributions.Normal(p_mu_batch, p_var_batch)
+        x_kl = kl_gaussian_loss_term(q_x, p_x, len(batch_idx), self.data_dim)
+        self.update_added_loss_term('x_kl', x_kl)
+        
+        return q_x.rsample()
+    
 class kl_gaussian_loss_term(AddedLossTerm):
     
     def __init__(self, q_x, p_x, n, data_dim):

@@ -1,5 +1,5 @@
 ################################################################################################################################################################################
-##  This file is to for modelling with complex latent variables.
+##  This file is for modelling with complex latent variables.
 
 
 ################################################################################################################################################################################
@@ -10,7 +10,7 @@ from models_.lvmogp_preparation import BayesianGPLVM_
 from models_.cholesky_kronecker_variational_distribution import CholeskyKroneckerVariationalDistribution
 from models_.kronecker_variational_strategy import KroneckerVariationalStrategy
 from gpytorch.priors import NormalPrior
-from models_.latent_variables import VariationalLatentVariable
+from models_.latent_variables import VariationalLatentVariable, VariationalCatLatentVariable
 from models_.gaussian_likelihood import GaussianLikelihood
 from gpytorch.means import ZeroMean
 from gpytorch.kernels import ScaleKernel, RBFKernel, PeriodicKernel, MaternKernel
@@ -22,15 +22,26 @@ import yaml
 from modules.training_module import train_the_model
 from modules.prepare_data import *
 import random
+from util_functions import *
 # ------------------------------------------------------------------------------------------------------------------
-
-def _init_pca(Y, latent_dim):
-    U, S, V = torch.pca_lowrank(Y, q = latent_dim)
-    return torch.nn.Parameter(torch.matmul(Y, V[:,:latent_dim]))
 
 class LVMOGP_SVI(BayesianGPLVM_):
 
-    def __init__(self, n_outputs, n_input, input_dim, latent_dim, n_inducing_input, n_inducing_latent, data_Y=None, pca=False, learn_inducing_locations_latent=True, learn_inducing_locations_input=True, latent_kernel_type='Scale_RBF', input_kernel_type='Scale_RBF'):
+    def __init__(self, n_outputs, 
+                 n_input, 
+                 input_dim, 
+                 latent_dim, # This refers to the total dim: both trainable and non-trainable
+                 n_inducing_input, 
+                 n_inducing_latent, 
+                 data_Y=None, 
+                 pca=False, 
+                 trainable_latent_dim = None, # how many dims are trainable (counting from the start), if none, all trainable
+                 latent_first_init = None, # trainable part initialization
+                 latent_second_init = None, # fixed part initialization
+                 learn_inducing_locations_latent=True, 
+                 learn_inducing_locations_input=True, 
+                 latent_kernel_type='Scale_RBF', 
+                 input_kernel_type='Scale_RBF'):
 
         self.n_outputs = n_outputs
         self.n_input = n_input
@@ -39,61 +50,43 @@ class LVMOGP_SVI(BayesianGPLVM_):
         
         q_u = CholeskyKroneckerVariationalDistribution(n_inducing_input, n_inducing_latent)
 
-        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_latent, self.inducing_inputs_input, q_u, learn_inducing_locations_latent=learn_inducing_locations_latent, learn_inducing_locations_input=learn_inducing_locations_input)
+        q_f = KroneckerVariationalStrategy(self, self.inducing_inputs_latent, self.inducing_inputs_input, q_u, 
+                                           learn_inducing_locations_latent=learn_inducing_locations_latent, 
+                                           learn_inducing_locations_input=learn_inducing_locations_input)
 
         # Define prior for latent
         latent_prior_mean = torch.zeros(n_outputs, latent_dim)  # shape: N x Q
         prior_latent = NormalPrior(latent_prior_mean, torch.ones_like(latent_prior_mean))
 
-        # Initialise X with PCA or randn
-        if pca == True:
-            assert data_Y.shape[0] == self.n_outputs
-            assert data_Y.shape[1] == self.n_input
-            latent_init = _init_pca(data_Y, latent_dim) # Initialise X to PCA 
-        # TODO: how about training a GPLVM_SVI independent model for initialization ...
-        else:
-            latent_init = torch.nn.Parameter(torch.randn(n_outputs, latent_dim))
-        
+        latent_init = torch.randn(n_outputs, latent_dim)
+
+        if latent_first_init != None and trainable_latent_dim != None:
+            latent_init[:, :trainable_latent_dim] = latent_first_init
+
+        # second part is fixed during training ... 
+        if latent_second_init != None and trainable_latent_dim != None:
+            if trainable_latent_dim < latent_dim:
+                latent_init[:, trainable_latent_dim:] = latent_second_init
+
         # LatentVariable (c)
-        latent_variables = VariationalLatentVariable(n_outputs, n_input, latent_dim, latent_init, prior_latent)
+        if trainable_latent_dim != None:
+            latent_variables = VariationalCatLatentVariable(n_outputs, n_input, latent_dim, latent_init, prior_latent, trainable_latent_dim)
+        else:
+            latent_variables = VariationalLatentVariable(n_outputs, n_input, latent_dim, latent_init, prior_latent, trainable_latent_dim=None)
 
         super().__init__(latent_variables, q_f)
 
         self.mean_module = ZeroMean()
 
         # Kernel (acting on latent dimensions)
+        # Scale_RBF is the default choice, as prediction via integration of latent variable is possible.
         if latent_kernel_type == 'Scale_RBF':
             self.covar_module_latent = ScaleKernel(RBFKernel(ard_num_dims=latent_dim))
 
         #### ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- 
         # Kernel (acting on index dimensions)
-        if input_kernel_type == 'Scale_RBF':
-            self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim))
-        
-        elif input_kernel_type == 'Scale_Matern5/2':
-            self.covar_module_input = ScaleKernel(MaternKernel(nu=2.5))
+        self.covar_module_input = helper_specify_kernel_by_name(input_kernel_type, input_dim)
 
-        elif input_kernel_type == 'Scale_Periodic':
-            self.covar_module_input = ScaleKernel(PeriodicKernel())
-        
-        elif input_kernel_type == 'Scale_Periodic_times_RBF_plus_Scale_RBF':
-            self.covar_module_input = ScaleKernel(PeriodicKernel()) * RBFKernel(ard_num_dims=input_dim) + ScaleKernel(RBFKernel(ard_num_dims=input_dim))
-        
-        elif input_kernel_type == 'Scale_Periodic_times_Scale_RBF':
-            self.covar_module_input = ScaleKernel(PeriodicKernel()) * ScaleKernel(RBFKernel(ard_num_dims=input_dim))
-        
-        elif input_kernel_type == 'Scale_Matern5/2_times_Scale_Periodic':
-            self.covar_module_input = ScaleKernel(PeriodicKernel()) * ScaleKernel(MaternKernel(nu=2.5))
-
-        elif input_kernel_type == 'Scale_RBF_plus_Scale_Periodic':
-            self.covar_module_input = ScaleKernel(RBFKernel(ard_num_dims=input_dim)) + ScaleKernel(PeriodicKernel())
-        
-        elif input_kernel_type == 'Scale_Matern5/2_Plus_Scale_Periodic':
-            self.covar_module_input = ScaleKernel(MaternKernel(nu=2.5)) + ScaleKernel(PeriodicKernel())
-        
-        elif input_kernel_type == 'Scale_Matern3/2_Plus_Scale_Periodic':
-            self.covar_module_input = ScaleKernel(MaternKernel(nu=1.5)) + ScaleKernel(PeriodicKernel())
-        
     def _get_batch_idx(self, batch_size, sample_latent = True):
         if sample_latent == True:
             valid_indices = np.arange(self.n_outputs)
@@ -108,10 +101,11 @@ if __name__ == "__main__":
     #### Load hyperparameters from .yaml file
 
     root_config = '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/configs/'
-    with open(f'{root_config}/spatiotemp_lvmogp_config.yaml', 'r') as file:
+    with open(f'{root_config}/spatiotemp_lvmogp_catlatent_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
     
     # specify random seed
+        
     random.seed(config['random_seed'])
     np.random.seed(config['random_seed'])
     torch.manual_seed(config['random_seed'])
@@ -122,9 +116,14 @@ if __name__ == "__main__":
         data_inputs, data_Y_squeezed, idx_ls_of_ls, *arg = prepare_synthetic_regression_data(config)
     
     elif config['dataset_type'] == 'spatio_temporal_data':
-        assert config['latent_dim'] == 2
+        # assert config['latent_dim'] == 2
         data_inputs, data_Y_squeezed, idx_ls_of_ls, _, lon_lat_tensor, *arg = prepare_spatio_temp_data(config)
     
+    #### Model Initialization (before instantiation)
+        
+    _latent_first_init = None
+    _latent_second_init = lon_lat_tensor
+
     #### Define model and likelihood
 
     my_model = LVMOGP_SVI(
@@ -135,6 +134,9 @@ if __name__ == "__main__":
         n_inducing_input = config['n_inducing_input'],
         n_inducing_latent = config['n_inducing_latent'],
         pca = config['pca'],
+        trainable_latent_dim = config['trainable_latent_dim'],  # how many dims are trainable (counting from the start), if none, all trainable
+        latent_first_init = _latent_first_init,                 # trainable part initialization, if none, random initialization
+        latent_second_init = _latent_second_init,               # fixed part initialization, if none, random initialization
         learn_inducing_locations_latent = config['learn_inducing_locations_latent'],
         learn_inducing_locations_input = config['learn_inducing_locations_input'],
         latent_kernel_type = config['latent_kernel_type'],
@@ -143,31 +145,9 @@ if __name__ == "__main__":
 
     my_likelihood = GaussianLikelihood()
 
-    #### Model Initialization ... 
+    #### Model Initialization (after instantiation) ... 
 
-    if config['input_kernel_type'] == 'Scale_Periodic_times_Scale_RBF':
-        # my_model.covar_module_input.kernels[0].base_kernel.raw_period_length.data = torch.tensor([[-0.5]]) # true period_length = 0.33
-        my_model.covar_module_input.kernels[1].base_kernel.raw_lengthscale.data = torch.tensor([[config['2thKernel_raw_lengthscale_init']]])
-
-    if config['input_kernel_type'] == 'Scale_Periodic_times_RBF_plus_Scale_RBF':
-        my_model.covar_module_input.kernels[0].kernels[1].raw_lengthscale.data == torch.tensor([[config['2thKernel_raw_lengthscale_init']]])
-    
-    my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)).to(torch.double) 
-    my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']]).to(torch.double)
-
-    if config['dataset_type'] == 'spatio_temporal_data':
-
-        if config['init_latents'] == True:
-            # NOTE X.q_log_sigma is still trainable
-            my_model.X.q_mu.data = lon_lat_tensor # config['latent_dim'] = 2
-            # my_model.X.q_mu.requires_grad = False
-            # my_model.X.q_log_sigma.requires_grad = False
-            if config['fix_latents_mean'] == True:
-                my_model.X.q_mu.requires_grad = False
-        
-        else:
-            NotImplementedError
-
+    my_model, my_likelihood = helper_init_model_and_likeli(my_model, my_likelihood, config)
     #### Training the model ... 
 
     total_time = train_the_model(
@@ -178,7 +158,6 @@ if __name__ == "__main__":
         my_likelihood = my_likelihood,
         config = config
     )
-
     print('total_time is: ', total_time)
 
 

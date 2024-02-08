@@ -1,0 +1,62 @@
+# seed
+random_seed: 100 # range=6, seed = 67, 122; 12, 11
+
+# data
+dataset_type: 'spatio_temporal_data'
+data_Y_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/climate_data/tensors/temperature.pt'
+data_lat_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/climate_data/tensors/latitude.pt'
+data_lon_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/data/climate_data/tensors/longitude.pt'
+
+# input
+min_input_bound: 0 
+max_input_bound: 10 
+inputs_period:  # None
+
+# model
+n_outputs: 1131 # 1131
+n_input: 363
+n_input_train: 289  # # of train inputs for every output 
+n_input_test: 74   #  # of test inputs for every output 
+input_dim: 1
+latent_dim: 2
+trainable_latent_dim: 2 
+# (1) trainable_latent_dim = None: only 1 part, all trainable ; 
+# (2) trainable_latent_dim = 0: only 1 part, all fixed ; 
+# (3) 0 < trainable_latent_dim < latent_dim: 2 parts ; 
+# (4) trainable_latent_dim = latent_dim: only 1 part, all trainable ;
+n_inducing_input: 20
+n_inducing_latent: 50
+batch_size_latent: 50
+batch_size_input:  20
+pca: False
+learn_inducing_locations_latent: True
+learn_inducing_locations_input: True # False
+latent_kernel_type: 'Scale_RBF'
+input_kernel_type: 'Scale_Periodic_times_Scale_RBF'
+beta: 1
+alpha: 1
+
+# model initialization
+2thKernel_raw_lengthscale_init: 20.
+init_likelihood_raw_noise: -2.973 # noise value = 0.05 (ground truth)
+init_inducing_input_LB: 0
+init_inducing_input_UB: 10
+
+# optimizer
+lr: 0.1
+step_size: 20
+gamma: 0.95
+
+# training
+n_iterations: 5000
+num_latent_MC: 3
+model_max_grad_norm: 1
+likeli_max_grad_norm: 0.1
+
+# save
+training_losses_figure_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/loss.png'
+model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/sptem_model_weight_catlatent.pth'
+likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/sptem_likelihood_weight_catlatent.pth'
+save_min_elbo_modelandlikelihood: True
+min_model_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/min_sptem_model_weight_catlatent.pth'
+min_likelihood_path: '/Users/jiangxiaoyu/Desktop/All Projects/GPLVM_project_code/experi_results/min_sptem_likelihood_weight_catlatent.pth'

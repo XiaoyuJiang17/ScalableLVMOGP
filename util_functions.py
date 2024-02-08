@@ -5,7 +5,7 @@ import json
 import torch
 from tqdm import trange
 import matplotlib.pyplot as plt
-from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel, PeriodicKernel
 from gpytorch.settings import _linalg_dtype_cholesky
 from linear_operator.operators import KroneckerProductLinearOperator, TriangularLinearOperator, LinearOperator, CholLinearOperator
 from linear_operator.utils.cholesky import psd_safe_cholesky
@@ -1498,3 +1498,62 @@ def predict_and_evaluate_igp(MultiIGP,
     result_dict['list_output_dist4visual'] = list_output_dist4visual
 
     return result_dict
+
+
+
+
+################################################   Specify Kernels : Helper Function  ################################################
+
+
+def helper_specify_kernel_by_name(kernel_name, input_dim=None):
+    # Kernel (acting on index dimensions)
+    '''
+    input_dim is a MUST for RBFKernel
+    '''
+    if kernel_name == 'Scale_RBF':
+        return ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+    
+    elif kernel_name == 'Scale_Matern5/2':
+        return ScaleKernel(MaternKernel(nu=2.5))
+
+    elif kernel_name == 'Scale_Periodic':
+        return ScaleKernel(PeriodicKernel())
+    
+    elif kernel_name == 'Scale_Periodic_times_RBF_plus_Scale_RBF':
+        return ScaleKernel(PeriodicKernel()) * RBFKernel(ard_num_dims=input_dim) + ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+    
+    elif kernel_name == 'Scale_Periodic_times_Scale_RBF':
+        return ScaleKernel(PeriodicKernel()) * ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+    
+    elif kernel_name == 'Scale_Matern5/2_times_Scale_Periodic':
+        return ScaleKernel(PeriodicKernel()) * ScaleKernel(MaternKernel(nu=2.5))
+
+    elif kernel_name == 'Scale_RBF_plus_Scale_Periodic':
+        return ScaleKernel(RBFKernel(ard_num_dims=input_dim)) + ScaleKernel(PeriodicKernel())
+    
+    elif kernel_name == 'Scale_Matern5/2_Plus_Scale_Periodic':
+        return ScaleKernel(MaternKernel(nu=2.5)) + ScaleKernel(PeriodicKernel())
+    
+    elif kernel_name == 'Scale_Matern3/2_Plus_Scale_Periodic':
+        return ScaleKernel(MaternKernel(nu=1.5)) + ScaleKernel(PeriodicKernel())
+    
+
+################################################   Init Model and Likelihood : Helper Function  ################################################
+
+
+def helper_init_model_and_likeli(my_model, my_likelihood, config):
+        
+    if config['input_kernel_type'] == 'Scale_Periodic_times_Scale_RBF':
+        # my_model.covar_module_input.kernels[0].base_kernel.raw_period_length.data = torch.tensor([[-0.5]]) # true period_length = 0.33
+        my_model.covar_module_input.kernels[1].base_kernel.raw_lengthscale.data = torch.tensor([[config['2thKernel_raw_lengthscale_init']]])
+
+    if config['input_kernel_type'] == 'Scale_Periodic_times_RBF_plus_Scale_RBF':
+        my_model.covar_module_input.kernels[0].kernels[1].raw_lengthscale.data == torch.tensor([[config['2thKernel_raw_lengthscale_init']]])
+    
+    # Init inducing points in input space
+    my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)).to(torch.double) 
+    
+    # Init noise scale in likelihood
+    my_likelihood.raw_noise.data = Tensor([config['init_likelihood_raw_noise']]).to(torch.double)
+
+    return my_model, my_likelihood

@@ -37,3 +37,7 @@ lvmogp_selected_dims.ipynb are code to only model selected dims.
 
 7/2/2024
 The saved model end with 2 is the current best model in spatio-temporal dataset. We keep that for future use.
+
+8/2/2024
+prepare_and_train_model_catlatent.py is a generalized implementation of prepare_and_train_model.py, which supports catenation of trainable and fixed latent variables,
+each part may have their own initialization.
