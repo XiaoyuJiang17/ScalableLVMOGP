@@ -1,5 +1,5 @@
 # seed
-random_seed: 12 # range=6, seed = 67, 122; 12, 11
+random_seed: 153 # range=6, seed = 67, 122; 12, 11
 
 # data
 dataset_type: 'spatio_temporal_data'
