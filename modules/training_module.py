@@ -11,7 +11,7 @@ import time
 from util_functions import *
 from models_.variational_elbo import VariationalELBO
 
-def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_likelihood, config):
+def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_likelihood, config, latent_info=None):
 
     '''
     Args:
@@ -48,7 +48,7 @@ def train_the_model(data_Y_squeezed, data_inputs, idx_ls_of_ls, my_model, my_lik
         ### computing loss = negative variational elbo = - (log_likelihood - kl_divergence - added_loss)
         loss = 0.0
         for _ in range(config['num_latent_MC']):
-            sample_batch_X = my_model.sample_latent_variable(batch_index_latent)
+            sample_batch_X = my_model.sample_latent_variable(batch_idx=batch_index_latent, latent_info=latent_info)
             sample_batch_C = data_inputs[batch_index_input]
             output_batch = my_model(sample_batch_X, sample_batch_C) # q(f)
             batch_index_Y = inhomogeneous_index_of_batch_Y(batch_index_latent, batch_index_input, config['n_outputs'], config['n_input'])

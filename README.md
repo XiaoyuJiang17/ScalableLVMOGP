@@ -41,3 +41,18 @@ The saved model end with 2 is the current best model in spatio-temporal dataset.
 8/2/2024
 prepare_and_train_model_catlatent.py is a generalized implementation of prepare_and_train_model.py, which supports catenation of trainable and fixed latent variables,
 each part may have their own initialization.
+
+The saved model end with _222 is the current best models we want to keep. 
+Currently there are 2 for spatio temp experiments:
+    1. fixed latent variable with init as (lon, lat).
+    2. trainable latent variables with random init.
+
+In modules folder:
+    The following 3 .py files support different types of LATENT VARIABLE.
+    1. prepare_and_train_model_encoderlatent.py ----> latent variables are output of a NN which take some latent info as input.
+    2. prepare_and_train_model_catlatent.py  -------> cat latent variable, latent variables are formed by 2 parts: trainable and fixed. Generalisation of prepare_and_train_model.py
+    3. prepare_and_train_model.py  -----------------> VariationalLatentVariable.
+
+In post_train_analysis folder:
+    lvmogp_spatio_temp.ipynb supports analysis of models trained from 2, 3.
+    lvmogp_spatio_temp_encoderlatent.ipynb supports analysis of models trained from 1. 

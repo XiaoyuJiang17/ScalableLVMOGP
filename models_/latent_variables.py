@@ -7,11 +7,6 @@ from gpytorch.mlls.added_loss_term import AddedLossTerm
 
 class LatentVariable(Module):
     """
-    This super class is used to describe the type of inference
-    used for the latent variable :math:`\\mathbf X` in GPLVM models.
-
-    :param int n: Size of the latent space.
-    :param int latent_dim: Dimensionality of latent space.
     """
 
     def __init__(self, n, dim):
@@ -25,12 +20,6 @@ class LatentVariable(Module):
 
 class PointLatentVariable(LatentVariable):
     """
-    This class is used for GPLVM models to recover a MLE estimate of
-    the latent variable :math:`\\mathbf X`.
-
-    :param int n: Size of the latent space.
-    :param int latent_dim: Dimensionality of latent space.
-    :param torch.Tensor X_init: initialization for the point estimate of :math:`\\mathbf X`
     """
 
     def __init__(self, n, latent_dim, X_init):
@@ -43,13 +32,6 @@ class PointLatentVariable(LatentVariable):
 
 class MAPLatentVariable(LatentVariable):
     """
-    This class is used for GPLVM models to recover a MAP estimate of
-    the latent variable :math:`\\mathbf X`, based on some supplied prior.
-
-    :param int n: Size of the latent space.
-    :param int latent_dim: Dimensionality of latent space.
-    :param torch.Tensor X_init: initialization for the point estimate of :math:`\\mathbf X`
-    :param ~gpytorch.priors.Prior prior_x: prior for :math:`\\mathbf X`
     """
 
     def __init__(self, n, latent_dim, X_init, prior_x):
@@ -69,7 +51,7 @@ class VariationalLatentVariable(LatentVariable):
     an isotropic Gaussian distribution.
 
     n: number of latent (outputs)
-    data_dim: number of inputs
+    data_dim: number of inputs (n_inputs)
     """
 
     def __init__(self, n, data_dim, latent_dim, X_init, prior_x, trainable_latent_dim=None):
@@ -91,7 +73,7 @@ class VariationalLatentVariable(LatentVariable):
         # This will add the KL divergence KL(q(X) || p(X)) to the loss
         self.register_added_loss_term("x_kl")
     
-    def forward(self, batch_idx=None):
+    def forward(self, batch_idx=None, latent_info=None):
 
         if batch_idx is None:
             batch_idx = np.arange(self.n) 
@@ -120,10 +102,14 @@ class VariationalLatentVariable(LatentVariable):
         self.update_added_loss_term("x_kl", x_kl)  # Update the KL term
         return q_x.rsample()
     '''
+
 class VariationalCatLatentVariable(LatentVariable):
     """
     Advanced VariationalLatentVariable.
-    Supports flexible latent variables with only parts of them trainable, i.e Cat of two parts.
+    Supports flexible latent variables with only parts of them trainable, i.e Cat of two parts, one trainable, one fixed.
+
+    n: number of latent (outputs)
+    data_dim: number of inputs (n_inputs)
     """
 
     def __init__(self, n, data_dim, latent_dim, X_init, prior_x, trainable_latent_dim=None):
@@ -150,8 +136,10 @@ class VariationalCatLatentVariable(LatentVariable):
     def q_mu(self):
         return torch.cat((self.q_mu_1, self.q_mu_2), dim=1)
 
-    # Save as VariationalLatentVariable implementation
-    def forward(self, batch_idx=None):
+    # Same as VariationalLatentVariable implementation
+    def forward(self, batch_idx=None, latent_info=None):
+        # NOTE latent_info keep fixed as None.
+        # latent_info=None here extends code adoptability.
 
         if batch_idx is None:
             batch_idx = np.arange(self.n) 
@@ -170,6 +158,89 @@ class VariationalCatLatentVariable(LatentVariable):
         
         return q_x.rsample()
     
+
+class NNEncoderLatentVariable(LatentVariable):
+    '''
+    Variational distribution of Latent variables are parametrized by neural networks.
+    i.e. means and sigmas are outputs of NN, which take additional information as input.
+
+    for instance, for output i: 
+        q(latent_i) = Normal(mean_i, sigma_i**2)
+            mean_i = NN_1(info_i)
+            sigma_i = NN_2(info_i)
+
+    here info_i are additional available information for output i, such as (lon, lat) in spatio-temp case.
+    #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
+    n: number of latent (outputs)
+    data_dim: number of inputs (n_inputs)
+    '''
+    def __init__(self, n, data_dim, latent_dim, prior_x, latent_info_dim=2, layers=[4, 8, 4]):
+
+        # layers contains the number of neurons in the hidden layers.
+        # thus, by default the NN will has structure: latent_info_dim->4->8->4->latent_dim
+        super().__init__(n, latent_dim)
+        self.data_dim = data_dim
+        self.prior_x = prior_x
+        self.latent_info_dim = latent_info_dim
+
+        self._init_mu_nnet(layers)
+        self._init_logsig_nnet(layers)
+        self.register_added_loss_term("x_kl")
+
+        jitter = torch.ones(latent_dim).unsqueeze(0)*1e-5
+        self.jitter = torch.cat([jitter for i in range(n)], axis=0)
+    
+    def _init_mu_nnet(self, layers):
+        layers = [self.latent_info_dim] + layers + [self.latent_dim]
+        self.mu_layers = torch.nn.ModuleList([ \
+            torch.nn.Linear(layers[i], layers[i+1]) \
+            for i in range(len(layers) - 1)])
+
+    def _init_logsig_nnet(self, layers):
+        layers = [self.latent_info_dim] + layers + [self.latent_dim]
+        self.logsig_layers = torch.nn.ModuleList([ \
+            torch.nn.Linear(layers[i], layers[i+1]) \
+            for i in range(len(layers) - 1)])
+
+    def mu(self, latent_info):
+        mu = torch.tanh(self.mu_layers[0](latent_info))
+        for i in range(1, len(self.mu_layers)):
+            mu = torch.tanh(self.mu_layers[i](mu))
+            # This is a trick from GGPLVM paper's code ... 
+            if i == (len(self.mu_layers) - 1): mu = mu * 5
+        return mu
+
+    def logsigma(self, latent_info):
+        logsig = torch.tanh(self.logsig_layers[0](latent_info))
+        for i in range(1, len(self.logsig_layers)):
+            logsig = torch.tanh(self.logsig_layers[i](logsig))
+            # This is a trick from GGPLVM paper's code ... 
+            if i == (len(self.logsig_layers) - 1): logsig = logsig * 5
+        return logsig + self.jitter
+
+    def forward(self, latent_info, batch_idx=None):
+        # latent_info shoud of shape (n, latent_info_dim) where n refers to number of all outputs
+        # TODO make latent_info only mini-batches ... 
+        mu = self.mu(latent_info)
+        logsig = self.logsigma(latent_info)
+
+        if batch_idx is None:
+            batch_idx = np.arange(self.n)
+        
+        q_mu_batch = mu[batch_idx, ...]
+        q_logsig_batch = logsig[batch_idx, ...]
+
+        q_x = torch.distributions.Normal(q_mu_batch, q_logsig_batch.exp())
+
+        p_mu_batch = self.prior_x.loc[batch_idx, ...]
+        p_var_batch = self.prior_x.variance[batch_idx, ...]
+
+        p_x = torch.distributions.Normal(p_mu_batch, p_var_batch)
+        x_kl = kl_gaussian_loss_term(q_x, p_x, len(batch_idx), self.data_dim)
+        self.update_added_loss_term('x_kl', x_kl)
+        
+        return q_x.rsample()
+
 class kl_gaussian_loss_term(AddedLossTerm):
     
     def __init__(self, q_x, p_x, n, data_dim):

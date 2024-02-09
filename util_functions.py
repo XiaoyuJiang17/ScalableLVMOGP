@@ -1278,7 +1278,8 @@ def integration_prediction_func(test_input, output_index, my_model, common_backg
 def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common_background_information=None, approach='mean', not4visual=True, n_data4visual=0):
     '''
     Perform inference on all inputs and outputs pairs, two possible approaches: mean and integration. 
-    my_model: LVMOGP based model.
+    my_model: LVMOGP based model (with VariationalCatLatentVariable or VariationalLatentVariable).
+    NOTE: does NOT support NNEncoderLatentVariable. 
     '''
     my_model.eval()
     my_likelihood.eval()
@@ -1498,8 +1499,6 @@ def predict_and_evaluate_igp(MultiIGP,
     result_dict['list_output_dist4visual'] = list_output_dist4visual
 
     return result_dict
-
-
 
 
 ################################################   Specify Kernels : Helper Function  ################################################
