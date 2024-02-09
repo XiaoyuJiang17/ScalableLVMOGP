@@ -218,7 +218,7 @@ class NNEncoderLatentVariable(LatentVariable):
             if i == (len(self.logsig_layers) - 1): logsig = logsig * 5
         return logsig + self.jitter
 
-    def forward(self, latent_info, batch_idx=None):
+    def forward(self, latent_info, batch_idx=None, eval_mode=False):
         # latent_info shoud of shape (n, latent_info_dim) where n refers to number of all outputs
         # TODO make latent_info only mini-batches ... 
         mu = self.mu(latent_info)
@@ -230,6 +230,9 @@ class NNEncoderLatentVariable(LatentVariable):
         q_mu_batch = mu[batch_idx, ...]
         q_logsig_batch = logsig[batch_idx, ...]
 
+        if eval_mode == True:
+            return q_mu_batch, q_logsig_batch.exp()
+        
         q_x = torch.distributions.Normal(q_mu_batch, q_logsig_batch.exp())
 
         p_mu_batch = self.prior_x.loc[batch_idx, ...]

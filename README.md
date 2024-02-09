@@ -54,5 +54,5 @@ In modules folder:
     3. prepare_and_train_model.py  -----------------> VariationalLatentVariable.
 
 In post_train_analysis folder:
-    lvmogp_spatio_temp.ipynb supports analysis of models trained from 2, 3.
+    lvmogp_spatio_temp_catlatent.ipynb supports analysis of models trained from 2, 3.
     lvmogp_spatio_temp_encoderlatent.ipynb supports analysis of models trained from 1. 

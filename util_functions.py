@@ -1162,8 +1162,9 @@ def prepare_common_background_info(my_model, config):
                         'm_u': my_model.variational_strategy._variational_distribution.variational_mean.data,
                         'Sigma_u': covar_u.data,
                         'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t.t(),
-                        'var_H': my_model.covar_module_latent.outputscale.data,
-                        'var_X': my_model.covar_module_input.outputscale.data,
+                        'var_H': my_model.covar_module_latent.outputscale.data, # based on the use of RBF kernel
+                        'var_X': my_model.covar_module_input(Tensor([0.])).to_dense().item(),
+                        #'var_X': my_model.covar_module_input.outputscale.data,  # 
                         'W': my_model.covar_module_latent.base_kernel.lengthscale.data.reshape(-1)**2
                         }
     '''
@@ -1182,14 +1183,30 @@ def prepare_common_background_info(my_model, config):
 
     return common_background_information
 
-def integration_prediction_func(test_input, output_index, my_model, common_background_information, config):
+def integration_prediction_func(test_input, 
+                                output_index, 
+                                my_model, 
+                                common_background_information, 
+                                config, 
+                                latent_type=None,
+                                latent_info=None):
 
     input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
     input_K_u_f_K_f_u = input_K_f_u.t() @ input_K_f_u
 
+    if latent_type == None:
+        m_plus_ = my_model.X.q_mu.data[output_index]
+        Sigma_plus_ = 1.0 * my_model.X.q_log_sigma.exp().square().data[output_index]
+
+    elif latent_type == 'NNEncoder':
+        # In this case, latent_info is the MUST.
+        assert latent_info != None
+        m_plus_ = my_model.X(latent_info, eval_mode=True)[0].data[output_index]
+        Sigma_plus_ = my_model.X(latent_info, eval_mode=True)[-1].square().data[output_index] # already .exp().
+
     data_specific_background_information = {
-        'm_plus': my_model.X.q_mu.data[output_index],
-        'Sigma_plus': 1.0 * my_model.X.q_log_sigma.exp().square().data[output_index],
+        'm_plus': m_plus_,
+        'Sigma_plus': Sigma_plus_,
         'input_K_f_u': input_K_f_u, 
         'input_K_u_f_K_f_u': input_K_u_f_K_f_u,
         'expectation_K_uu': None
@@ -1275,14 +1292,30 @@ def integration_prediction_func(test_input, output_index, my_model, common_backg
 
 ## Inference:
 
-def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common_background_information=None, approach='mean', not4visual=True, n_data4visual=0):
+def pred4all_outputs_inputs(my_model, 
+                            my_likelihood, 
+                            data_inputs, 
+                            config, 
+                            common_background_information=None, 
+                            latent_type=None, # or 'NNEncoder'
+                            latent_info=None,
+                            approach='mean', 
+                            not4visual=True, 
+                            n_data4visual=0):
     '''
     Perform inference on all inputs and outputs pairs, two possible approaches: mean and integration. 
     my_model: LVMOGP based model (with VariationalCatLatentVariable or VariationalLatentVariable).
-    NOTE: does NOT support NNEncoderLatentVariable. 
+    NOTE: 
+    latent_type=NNEncoder : NNEncoderLatentVariable. 
+                            latent_info is a MUST in this case.
+    latent_type=None : VariationalLatentVariable, VariationalCatLatentVariable.
     '''
     my_model.eval()
     my_likelihood.eval()
+
+    # check
+    if latent_type == 'NNEncoder' and latent_info == None:
+        ValueError('latent info mush be given if NNEncoder is in use.')
 
     if not4visual:
         all_index_latent = np.array([[i]*config['n_input'] for i in range(config['n_outputs'])]).reshape(-1).tolist() 
@@ -1301,7 +1334,10 @@ def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common
 
     if approach == 'mean':
         # access the latent variables for all outputs
-        all_mean_outputs = my_model.X.q_mu.data
+        if latent_type == None:
+            all_mean_outputs = my_model.X.q_mu.data
+        elif latent_type == 'NNEncoder':
+            all_mean_outputs = my_model.X(latent_info, eval_mode=True)[0].data
 
         test_mini_batch_size = 1000
         test_continue = True
@@ -1333,7 +1369,9 @@ def pred4all_outputs_inputs(my_model, my_likelihood, data_inputs, config, common
                                                                         output_index=curr_latent_index,
                                                                         my_model=my_model,
                                                                         common_background_information=common_background_information,
-                                                                        config=config)
+                                                                        config=config,
+                                                                        latent_type=None, # or 'NNEncoder'
+                                                                        latent_info=None)
             all_pred_mean[idx] = curr_pred_mean
             all_pred_var[idx] = curr_pred_var + my_likelihood.noise.data
             
