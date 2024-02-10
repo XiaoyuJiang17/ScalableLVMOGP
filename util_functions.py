@@ -1163,7 +1163,7 @@ def prepare_common_background_info(my_model, config):
                         'Sigma_u': covar_u.data,
                         'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t.t(),
                         'var_H': my_model.covar_module_latent.outputscale.data, # based on the use of RBF kernel
-                        'var_X': my_model.covar_module_input(Tensor([0.])).to_dense().item(),
+                        'var_X': my_model.covar_module_input(Tensor([0.])).to_dense().item(), # This implementation works for any kind of kernel.
                         #'var_X': my_model.covar_module_input.outputscale.data,  # 
                         'W': my_model.covar_module_latent.base_kernel.lengthscale.data.reshape(-1)**2
                         }
@@ -1241,7 +1241,7 @@ def integration_prediction_func(test_input,
         return (common_background_information['constant_c'] ** 2 ) * result1 * result2
     
     def expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
-        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), data_specific_background_information['input_K_f_u'].reshape(1, -1)).to_dense().data 
+        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), data_specific_background_information['input_K_f_u']).to_dense().data 
         result_ = result_ @ common_background_information['chol_K_uu_inv_t'].to(result_.dtype) @ common_background_information['m_u'].to(result_.dtype)
         return result_
         
@@ -1332,6 +1332,8 @@ def pred4all_outputs_inputs(my_model,
     all_pred_mean = torch.zeros(len_outputs)
     all_pred_var = torch.zeros(len_outputs)
 
+    # --------------- --------------- --------------- --------------- --------------- --------------- --------------- --------------- ---------------
+
     if approach == 'mean':
         # access the latent variables for all outputs
         if latent_type == None:
@@ -1362,18 +1364,22 @@ def pred4all_outputs_inputs(my_model,
 
     elif approach == 'integration':
         # iteratively inference
-        for idx in trange(len_outputs, leave=True):
-            curr_latent_index = all_index_latent[idx]
-            curr_input = data_inputs[all_index_input[idx]].reshape(-1)
-            curr_pred_mean, curr_pred_var = integration_prediction_func(test_input=curr_input,
-                                                                        output_index=curr_latent_index,
+        # NOTE old implementation: slow 
+        # for idx in trange(len_outputs, leave=True):
+            # curr_latent_index = all_index_latent[idx]
+            # curr_input = data_inputs[all_index_input[idx]].reshape(-1)
+        for output_idx in trange(config['n_outputs'], leave=True):
+            curr_pred_mean, curr_pred_var = integration_prediction_func(test_input=data_inputs,  # curr_input,
+                                                                        output_index=output_idx, # curr_latent_index,
                                                                         my_model=my_model,
                                                                         common_background_information=common_background_information,
                                                                         config=config,
-                                                                        latent_type=None, # or 'NNEncoder'
-                                                                        latent_info=None)
-            all_pred_mean[idx] = curr_pred_mean
-            all_pred_var[idx] = curr_pred_var + my_likelihood.noise.data
+                                                                        latent_type=latent_type, # or 'NNEncoder'
+                                                                        latent_info=latent_info)
+            
+            start_id, end_id = output_idx * data_inputs.shape[0], (output_idx + 1) * data_inputs.shape[0]
+            all_pred_mean[start_id:end_id] = curr_pred_mean
+            all_pred_var[start_id:end_id]  = curr_pred_var + my_likelihood.noise.data
             
     return all_pred_mean, all_pred_var
 

@@ -29,6 +29,7 @@ latent_kernel_type: 'Scale_RBF'
 input_kernel_type: 'Scale_Periodic_times_Scale_RBF'
 beta: 1
 alpha: 1
+layers: [4, 8, 4] # number of neurons in hidden layers
 
 # model initialization
 2thKernel_raw_lengthscale_init: 20.

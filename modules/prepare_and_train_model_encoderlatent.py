@@ -36,7 +36,9 @@ class LVMOGP_SVI(BayesianGPLVM_):
                  learn_inducing_locations_latent=True, 
                  learn_inducing_locations_input=True, 
                  latent_kernel_type='Scale_RBF', 
-                 input_kernel_type='Scale_RBF'):
+                 input_kernel_type='Scale_RBF',
+                 layers=[4, 8, 4] # these are # of neurons in hidden layers ... 
+                 ):
 
         # NOTE:
         # PAY ATTENTION: n_input shoud be number of training data input. NOT total input.
@@ -62,7 +64,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
                     latent_dim=latent_dim, 
                     prior_x=prior_latent, 
                     latent_info_dim=2, 
-                    layers=[4, 8, 4]
+                    layers=layers
         )
         super().__init__(latent_variables, q_f)
         self.mean_module = ZeroMean()
@@ -119,7 +121,8 @@ if __name__ == "__main__":
         learn_inducing_locations_latent = config['learn_inducing_locations_latent'],
         learn_inducing_locations_input = config['learn_inducing_locations_input'],
         latent_kernel_type = config['latent_kernel_type'],
-        input_kernel_type = config['input_kernel_type']
+        input_kernel_type = config['input_kernel_type'],
+        layers = config['layers']
     )
 
     my_likelihood = GaussianLikelihood()
